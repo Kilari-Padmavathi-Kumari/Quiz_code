@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { loginWithEmailOnly } from "../lib/api";
-import { setStoredSession } from "../lib/session";
+import { getTokenExpiry, setStoredSession } from "../lib/session";
 
 const DEFAULT_ADMIN_EMAIL = "admin.quiz@gmail.com";
 const DEFAULT_ADMIN_NAME = "Quiz Admin";
@@ -36,7 +36,8 @@ export function LoginCard({
           email: result.user.email,
           name: result.user.name,
           userId: result.user.id,
-          isAdmin: result.user.is_admin
+          isAdmin: result.user.is_admin,
+          expiresAt: getTokenExpiry(result.access_token)
         });
 
         onSuccess?.();

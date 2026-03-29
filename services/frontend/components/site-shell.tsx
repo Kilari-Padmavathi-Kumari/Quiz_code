@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 
+import { logout } from "../lib/api";
 import { clearStoredSession, getStoredSession, type FrontendSession } from "../lib/session";
 
 export function SiteShell({
@@ -47,11 +48,17 @@ export function SiteShell({
               <button
                 type="button"
                 className="nav-item"
-                onClick={() => {
-                  clearStoredSession();
-                  setSession(null);
-                  router.push("/");
-                  router.refresh();
+                onClick={async () => {
+                  try {
+                    await logout();
+                  } catch {
+                    // Keep local logout resilient even if the API call fails.
+                  } finally {
+                    clearStoredSession();
+                    setSession(null);
+                    router.push("/");
+                    router.refresh();
+                  }
                 }}
               >
                 Logout
@@ -68,7 +75,7 @@ export function SiteShell({
               Dashboard
             </Link>
             {session ? (
-              <span className="status-pill">{session.email}</span>
+              <span className="status-pill">{session.name} · {session.email}</span>
             ) : (
               <span className="status-pill status-pill--ghost">Guest Mode</span>
             )}

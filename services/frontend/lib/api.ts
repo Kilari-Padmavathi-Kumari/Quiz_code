@@ -1,4 +1,5 @@
 import { API_URL } from "./config";
+import { clearStoredSession, updateStoredAccessToken } from "./session";
 
 export interface LoginResponse {
   access_token: string;
@@ -13,23 +14,33 @@ export interface LoginResponse {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit, accessToken?: string): Promise<T> {
+  const buildRequest = (token?: string) => ({
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {})
+    },
+    credentials: "include" as const,
+    cache: "no-store" as const
+  });
+
   let response: Response;
 
   try {
-    response = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-        ...(init?.headers ?? {})
-      },
-      credentials: "include",
-      cache: "no-store"
-    });
+    response = await fetch(`${API_URL}${path}`, buildRequest(accessToken));
   } catch (error) {
     throw new Error(
       "Failed to reach the API server. Make sure `pnpm dev:api` is running and `NEXT_PUBLIC_API_URL` matches it."
     );
+  }
+
+  if (response.status === 401 && accessToken) {
+    const refreshedToken = await refreshAccessToken();
+
+    if (refreshedToken) {
+      response = await fetch(`${API_URL}${path}`, buildRequest(refreshedToken));
+    }
   }
 
   if (!response.ok) {
@@ -48,6 +59,38 @@ async function apiFetch<T>(path: string, init?: RequestInit, accessToken?: strin
   }
 
   return (await response.json()) as T;
+}
+
+async function refreshAccessToken() {
+  try {
+    const response = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      clearStoredSession();
+      window.dispatchEvent(new Event("quiz-app-session-expired"));
+      return null;
+    }
+
+    const body = (await response.json()) as { access_token: string };
+    updateStoredAccessToken(body.access_token);
+    return body.access_token;
+  } catch {
+    return null;
+  }
+}
+
+export function logout() {
+  return apiFetch<{ success: boolean }>(
+    "/auth/logout",
+    {
+      method: "POST",
+      body: JSON.stringify({})
+    }
+  );
 }
 
 export function requestLoginCode(payload: { email: string; name?: string; avatar_url?: string }) {

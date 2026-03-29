@@ -91,6 +91,12 @@ export default function DashboardPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const totalContestAttempts = contestHistory.length;
+  const totalWins = contestHistory.filter((contest) => contest.is_winner).length;
+  const totalPrizeWon = contestHistory
+    .reduce((total, contest) => total + Number(contest.prize_amount), 0)
+    .toFixed(2);
+
   async function loadData(accessToken: string) {
     setError(null);
 
@@ -154,6 +160,24 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        <div className="stat-card">
+          <div className="eyebrow">Performance</div>
+          <div className="stat-value">{totalWins}/{totalContestAttempts}</div>
+          <p className="muted">
+            Contest wins and total attempts from your joined contest history.
+          </p>
+        </div>
+
+        <div className="stat-card">
+          <div className="eyebrow">Prize Credits</div>
+          <div className="stat-value">Rs {totalPrizeWon}</div>
+          <p className="muted">
+            Total prize money credited back to this wallet across completed contests.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid two" style={{ marginTop: 18 }}>
         <div className="card">
           <div className="eyebrow">Add Money</div>
           <label className="field" style={{ marginTop: 12 }}>
@@ -186,6 +210,11 @@ export default function DashboardPage() {
           <div className="eyebrow">Account</div>
           <h3>{session.name}</h3>
           <p className="muted mono">{session.email}</p>
+          <p className="muted" style={{ marginTop: 12 }}>
+            {session.isAdmin
+              ? "This account can access both player and admin workflows."
+              : "This account can join contests, watch results, and track wallet history."}
+          </p>
           <div className="pill-row">
             <span className="pill">{session.isAdmin ? "Admin Access" : "Player Access"}</span>
             <button
@@ -231,11 +260,18 @@ export default function DashboardPage() {
         </div>
 
         <div className="card">
-          <div className="eyebrow">Testing Note</div>
-          <p className="muted" style={{ marginTop: 14 }}>
-            Open contests appear below automatically. If a round has already ended, paste its UUID
-            here and jump directly into the leaderboard page without going back to terminal commands.
-          </p>
+          <div className="eyebrow">Dashboard Guide</div>
+          <div className="list" style={{ marginTop: 14 }}>
+            <div className="notice">
+              Join a contest from the list below and the entry fee will appear in wallet history as a debit.
+            </div>
+            <div className="notice">
+              When a contest ends, winnings appear in wallet history as a credit and the contest moves to Contest History.
+            </div>
+            <div className="notice">
+              Use the leaderboard button in Contest History to check who won after the contest finishes.
+            </div>
+          </div>
         </div>
       </div>
 
