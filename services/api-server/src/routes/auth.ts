@@ -1,0 +1,410 @@
+import { createHash, randomInt } from "node:crypto";
+
+import { withTransaction } from "@quiz-app/db";
+import type { FastifyInstance } from "fastify";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import { z } from "zod";
+
+import { config } from "../env.js";
+import {
+  authenticate,
+  clearRefreshCookie,
+  createSession,
+  getRefreshCookieName,
+  rotateSession,
+  revokeRefreshToken,
+  setRefreshCookie
+} from "../lib/auth.js";
+import { redis } from "../lib/redis.js";
+
+const requestCodeSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(2).max(80).optional(),
+  avatar_url: z.string().url().optional()
+});
+
+const verifyCodeSchema = z.object({
+  email: z.string().email(),
+  code: z.string().min(4).max(12)
+});
+
+const googleSchema = z.object({
+  id_token: z.string().min(10)
+});
+
+const passwordSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(2).max(80).optional(),
+  avatar_url: z.string().url().optional()
+});
+
+const emailLoginSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(2).max(80).optional(),
+  avatar_url: z.string().url().optional()
+});
+
+const authCodeKey = (email: string) => `auth:code:${email}`;
+
+type AuthCodePayload = {
+  code: string;
+  name?: string;
+  avatar_url?: string;
+};
+
+function makeDevProviderUid(email: string) {
+  return `dev_${createHash("sha256").update(email).digest("hex")}`;
+}
+
+async function resolveUserFromOauth({
+  provider,
+  providerUid,
+  email,
+  name,
+  avatarUrl
+}: {
+  provider: string;
+  providerUid: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+}) {
+  return withTransaction(async (client) => {
+    const oauthResult = await client.query<{
+      id: string;
+      email: string;
+      name: string;
+      avatar_url: string | null;
+      wallet_balance: string;
+      is_admin: boolean;
+      is_banned: boolean;
+    }>(
+      `
+        SELECT u.id, u.email, u.name, u.avatar_url, u.wallet_balance, u.is_admin, u.is_banned
+        FROM oauth_accounts oa
+        JOIN users u ON u.id = oa.user_id
+        WHERE oa.provider = $1 AND oa.provider_uid = $2
+        LIMIT 1
+      `,
+      [provider, providerUid]
+    );
+
+    if (oauthResult.rowCount === 1) {
+      return oauthResult.rows[0];
+    }
+
+    const existingUser = await client.query<{
+      id: string;
+      email: string;
+      name: string;
+      avatar_url: string | null;
+      wallet_balance: string;
+      is_admin: boolean;
+      is_banned: boolean;
+    }>(
+      `
+        SELECT id, email, name, avatar_url, wallet_balance, is_admin, is_banned
+        FROM users
+        WHERE email = $1
+        LIMIT 1
+      `,
+      [email]
+    );
+
+    const user =
+      existingUser.rows[0] ??
+      (
+        await client.query<{
+          id: string;
+          email: string;
+          name: string;
+          avatar_url: string | null;
+          wallet_balance: string;
+          is_admin: boolean;
+          is_banned: boolean;
+        }>(
+          `
+            INSERT INTO users (email, name, avatar_url, is_admin)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
+          `,
+          [email, name, avatarUrl ?? null, email === config.adminEmail]
+        )
+      ).rows[0];
+
+    await client.query(
+      `
+        INSERT INTO oauth_accounts (user_id, provider, provider_uid, email)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (provider, provider_uid) DO NOTHING
+      `,
+      [user.id, provider, providerUid, email]
+    );
+
+    return user;
+  });
+}
+
+type SessionResult =
+  | {
+      status: 200;
+      session: {
+        accessToken: string;
+        refreshToken: string;
+      };
+    }
+  | {
+      status: 403;
+      body: { message: string };
+    };
+
+async function issueSessionForUser(user: {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  is_banned: boolean;
+}): Promise<SessionResult> {
+  if (user.is_banned) {
+    return { status: 403, body: { message: "User account is banned" } };
+  }
+
+  const session = await createSession({
+    id: user.id,
+    email: user.email,
+    is_admin: user.is_admin,
+    is_banned: user.is_banned
+  });
+
+  return { status: 200, session };
+}
+
+async function verifyGoogleIdToken(idToken: string) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const jwksUrl = process.env.GOOGLE_JWKS_URL ?? "https://www.googleapis.com/oauth2/v3/certs";
+
+  if (!clientId) {
+    throw new Error("Google OAuth is not configured");
+  }
+
+  const jwks = createRemoteJWKSet(new URL(jwksUrl));
+  const { payload } = await jwtVerify(idToken, jwks, {
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
+    audience: clientId
+  });
+
+  const email = String(payload.email ?? "").toLowerCase();
+  const sub = String(payload.sub ?? "");
+
+  if (!email || !sub) {
+    throw new Error("Invalid Google token payload");
+  }
+
+  return {
+    providerUid: sub,
+    email,
+    name: String(payload.name ?? email.split("@")[0]),
+    avatarUrl: payload.picture ? String(payload.picture) : null
+  };
+}
+
+export async function authRoutes(app: FastifyInstance) {
+  app.post("/auth/email-login", async (request, reply) => {
+    const body = emailLoginSchema.parse(request.body);
+    const email = body.email.trim().toLowerCase();
+
+    console.log("EMAIL_LOGIN_REQUEST", {
+      email
+    });
+
+    const user = await resolveUserFromOauth({
+      provider: "google",
+      providerUid: makeDevProviderUid(email),
+      email,
+      name: body.name?.trim() ?? email.split("@")[0],
+      avatarUrl: body.avatar_url ?? null
+    });
+
+    const sessionResult = await issueSessionForUser(user);
+
+    if (sessionResult.status !== 200) {
+      return reply.code(sessionResult.status).send(sessionResult.body);
+    }
+
+    setRefreshCookie(reply, sessionResult.session.refreshToken);
+
+    return {
+      access_token: sessionResult.session.accessToken,
+      user,
+      mode: "email_only"
+    };
+  });
+
+  app.post("/auth/request-code", async (request) => {
+    const body = requestCodeSchema.parse(request.body);
+    const email = body.email.trim().toLowerCase();
+    const code = String(randomInt(100000, 999999));
+
+    const payload: AuthCodePayload = {
+      code,
+      name: body.name?.trim(),
+      avatar_url: body.avatar_url
+    };
+
+    await redis.setex(authCodeKey(email), config.authCodeTtlMinutes * 60, JSON.stringify(payload));
+
+    return {
+      success: true,
+      email,
+      expires_in_minutes: config.authCodeTtlMinutes,
+      dev_code: process.env.NODE_ENV === "production" ? undefined : config.authDevCode || code
+    };
+  });
+
+  app.post("/auth/password-login", async (request, reply) => {
+    const body = passwordSchema.parse(request.body);
+    const email = body.email.trim().toLowerCase();
+    const password = body.password.trim();
+    const patternOk = /^quiz@\\d{4}$/i.test(password);
+
+    if (password !== config.authDevPassword && !patternOk) {
+      return reply.code(401).send({ message: "Invalid password" });
+    }
+
+    const user = await resolveUserFromOauth({
+      provider: "google",
+      providerUid: makeDevProviderUid(email),
+      email,
+      name: body.name?.trim() ?? email.split("@")[0],
+      avatarUrl: body.avatar_url ?? null
+    });
+
+    const sessionResult = await issueSessionForUser(user);
+
+    if (sessionResult.status !== 200) {
+      return reply.code(sessionResult.status).send(sessionResult.body);
+    }
+
+    setRefreshCookie(reply, sessionResult.session.refreshToken);
+
+    return {
+      access_token: sessionResult.session.accessToken,
+      user,
+      mode: "password_auth"
+    };
+  });
+
+  app.post("/auth/verify-code", async (request, reply) => {
+    const body = verifyCodeSchema.parse(request.body);
+    const email = body.email.trim().toLowerCase();
+
+    const raw = await redis.get(authCodeKey(email));
+    if (!raw) {
+      return reply.code(401).send({ message: "Code expired or not requested" });
+    }
+
+    const parsed: AuthCodePayload = JSON.parse(raw);
+    const expectedCode = config.authDevCode || parsed.code;
+
+    if (body.code !== expectedCode) {
+      return reply.code(401).send({ message: "Invalid code" });
+    }
+
+    await redis.del(authCodeKey(email));
+
+    const user = await resolveUserFromOauth({
+      provider: "google",
+      providerUid: makeDevProviderUid(email),
+      email,
+      name: parsed.name ?? email.split("@")[0],
+      avatarUrl: parsed.avatar_url ?? null
+    });
+
+    const sessionResult = await issueSessionForUser(user);
+
+    if (sessionResult.status !== 200) {
+      return reply.code(sessionResult.status).send(sessionResult.body);
+    }
+
+    setRefreshCookie(reply, sessionResult.session.refreshToken);
+
+    return {
+      access_token: sessionResult.session.accessToken,
+      user,
+      mode: "code_auth",
+      comment: "Temporary code-based auth enabled because Google OAuth credentials are missing."
+    };
+  });
+
+  app.post("/auth/google", async (request, reply) => {
+    const body = googleSchema.parse(request.body);
+
+    try {
+      const profile = await verifyGoogleIdToken(body.id_token);
+      const user = await resolveUserFromOauth({
+        provider: "google",
+        providerUid: profile.providerUid,
+        email: profile.email,
+        name: profile.name,
+        avatarUrl: profile.avatarUrl
+      });
+
+      const sessionResult = await issueSessionForUser(user);
+
+      if (sessionResult.status !== 200) {
+        return reply.code(sessionResult.status).send(sessionResult.body);
+      }
+
+      setRefreshCookie(reply, sessionResult.session.refreshToken);
+
+      return {
+        access_token: sessionResult.session.accessToken,
+        user,
+        mode: "google_oauth"
+      };
+    } catch (error) {
+      return reply.code(503).send({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Google OAuth is not configured or token validation failed"
+      });
+    }
+  });
+
+  app.post("/auth/refresh", async (request, reply) => {
+    const rawRefreshToken = request.cookies[getRefreshCookieName()];
+
+    if (!rawRefreshToken) {
+      return reply.code(401).send({ message: "Missing refresh token cookie" });
+    }
+
+    const nextSession = await rotateSession(rawRefreshToken);
+
+    if (!nextSession) {
+      clearRefreshCookie(reply);
+      return reply.code(401).send({ message: "Refresh token is invalid or expired" });
+    }
+
+    setRefreshCookie(reply, nextSession.refreshToken);
+
+    return {
+      access_token: nextSession.accessToken
+    };
+  });
+
+  app.post("/auth/logout", async (request, reply) => {
+    const rawRefreshToken = request.cookies[getRefreshCookieName()];
+
+    if (rawRefreshToken) {
+      await revokeRefreshToken(rawRefreshToken);
+    }
+
+    clearRefreshCookie(reply);
+    return { success: true };
+  });
+
+  app.get("/auth/me", { preHandler: authenticate }, async (request) => ({
+    user: request.user
+  }));
+}
