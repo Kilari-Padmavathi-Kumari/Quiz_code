@@ -61,33 +61,65 @@ export function LoginCard({
   }
 
   return (
-    <div className="auth-card">
-      <div className="chip">Email Validation</div>
-      <h2 className="card-title">Enter with a verified email</h2>
-      <p className="muted">
-        Google OAuth is disabled for now. This login validates email format and creates a session
-        instantly so you can keep building.
+    <div className="auth-card auth-card--premium">
+      <div className="auth-card__top">
+        <div className="chip">Instant Access</div>
+        <span className="auth-card__spark">Local Demo Mode</span>
+      </div>
+
+      <h2 className="card-title">Enter the arena in seconds</h2>
+      <p className="auth-card__copy">
+        Use any valid email to create a player session instantly. Wallet, contests, and leaderboard
+        flows are ready the moment you sign in.
       </p>
 
+      <div className="auth-card__trust">
+        <div className="auth-card__trust-item">
+          <strong>Fast login</strong>
+          <span>No waiting on external auth setup.</span>
+        </div>
+        <div className="auth-card__trust-item">
+          <strong>Wallet ready</strong>
+          <span>Track debits, credits, and prize history.</span>
+        </div>
+        <div className="auth-card__trust-item">
+          <strong>Contest access</strong>
+          <span>Jump into player and admin flows quickly.</span>
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} className="auth-form">
-        <label className="field">
+        <label className="field auth-field">
           <span>Email</span>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} />
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="player.one@gmail.com"
+          />
         </label>
 
-        <label className="field">
+        <label className="field auth-field">
           <span>Display name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} />
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Player One"
+          />
         </label>
 
-        <button type="submit" className="solid-button" disabled={isPending}>
+        <button type="submit" className="solid-button auth-card__button" disabled={isPending}>
           {isPending ? "Signing in..." : "Continue"}
         </button>
       </form>
 
       {adminShortcut ? (
         <div style={{ marginTop: 12 }}>
-          <button type="button" className="ghost-button" disabled={isPending} onClick={handleAdminShortcut}>
+          <button
+            type="button"
+            className="ghost-button auth-card__ghost"
+            disabled={isPending}
+            onClick={handleAdminShortcut}
+          >
             {isPending ? "Signing in..." : "Continue as Admin"}
           </button>
         </div>

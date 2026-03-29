@@ -21,6 +21,7 @@ export async function contestRoutes(app: FastifyInstance) {
       member_count: number;
       starts_at: string;
       prize_pool: string;
+      prize_rule: "all_correct" | "top_scorer";
     }>(
       `
         SELECT
@@ -30,11 +31,52 @@ export async function contestRoutes(app: FastifyInstance) {
           max_members,
           member_count,
           starts_at,
-          (member_count * entry_fee)::numeric(12, 2) AS prize_pool
+          (member_count * entry_fee)::numeric(12, 2) AS prize_pool,
+          prize_rule
         FROM contests
         WHERE status = 'open'
           AND member_count < max_members
         ORDER BY starts_at ASC
+      `
+    );
+
+    return { contests: result.rows };
+  });
+
+  app.get("/contests/all", async () => {
+    const result = await pool.query<{
+      id: string;
+      title: string;
+      status: string;
+      entry_fee: string;
+      max_members: number;
+      member_count: number;
+      starts_at: string;
+      prize_pool: string;
+      prize_rule: "all_correct" | "top_scorer";
+    }>(
+      `
+        SELECT
+          id,
+          title,
+          status,
+          entry_fee,
+          max_members,
+          member_count,
+          starts_at,
+          (member_count * entry_fee)::numeric(12, 2) AS prize_pool,
+          prize_rule
+        FROM contests
+        ORDER BY
+          CASE
+            WHEN status = 'live' THEN 1
+            WHEN status = 'open' THEN 2
+            WHEN status = 'draft' THEN 3
+            WHEN status = 'ended' THEN 4
+            WHEN status = 'cancelled' THEN 5
+            ELSE 6
+          END,
+          starts_at DESC
       `
     );
 
@@ -55,6 +97,7 @@ export async function contestRoutes(app: FastifyInstance) {
       prize_amount: string;
       correct_count: string;
       prize_pool: string;
+      prize_rule: "all_correct" | "top_scorer";
     }>(
       `
         SELECT
@@ -69,7 +112,8 @@ export async function contestRoutes(app: FastifyInstance) {
           cm.is_winner,
           cm.prize_amount,
           COUNT(*) FILTER (WHERE a.is_correct = true)::text AS correct_count,
-          (c.member_count * c.entry_fee)::numeric(12, 2) AS prize_pool
+          (c.member_count * c.entry_fee)::numeric(12, 2) AS prize_pool,
+          c.prize_rule
         FROM contest_members cm
         JOIN contests c ON c.id = cm.contest_id
         LEFT JOIN answers a
@@ -86,7 +130,8 @@ export async function contestRoutes(app: FastifyInstance) {
           c.starts_at,
           cm.joined_at,
           cm.is_winner,
-          cm.prize_amount
+          cm.prize_amount,
+          c.prize_rule
         ORDER BY cm.joined_at DESC
       `,
       [request.user.id]
@@ -205,8 +250,12 @@ export async function contestRoutes(app: FastifyInstance) {
 
   app.get("/contests/:id/leaderboard", async (request, reply) => {
     const contestId = String((request.params as { id: string }).id);
-    const contestResult = await pool.query<{ status: string }>(
-      "SELECT status FROM contests WHERE id = $1 LIMIT 1",
+    const contestResult = await pool.query<{
+      title: string;
+      status: string;
+      prize_rule: "all_correct" | "top_scorer";
+    }>(
+      "SELECT title, status, prize_rule FROM contests WHERE id = $1 LIMIT 1",
       [contestId]
     );
 
@@ -249,6 +298,13 @@ export async function contestRoutes(app: FastifyInstance) {
       [contestId]
     );
 
-    return { leaderboard: leaderboardResult.rows };
+    return {
+      contest: {
+        id: contestId,
+        title: contestResult.rows[0].title,
+        prize_rule: contestResult.rows[0].prize_rule
+      },
+      leaderboard: leaderboardResult.rows
+    };
   });
 }

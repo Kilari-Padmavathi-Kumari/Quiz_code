@@ -278,6 +278,11 @@ io.use(async (socket, next) => {
       return next(new Error("User is banned"));
     }
 
+    const isMember = await checkContestMembership(contestId, payload.userId);
+    if (!isMember) {
+      return next(new Error("User is not a member of this contest"));
+    }
+
     socket.data.user = {
       id: payload.userId,
       contestId

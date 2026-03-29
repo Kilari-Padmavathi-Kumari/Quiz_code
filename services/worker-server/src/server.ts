@@ -408,7 +408,7 @@ async function endContest(contestId: string) {
     (row) => Number(row.correct_count) === totalQuestions && totalQuestions > 0
   );
 
-  if (contestResult.rows[0].prize_rule === "top_scorer" || winners.length === 0) {
+  if (contestResult.rows[0].prize_rule === "top_scorer") {
     const topScore = Math.max(...leaderboardResult.rows.map((row) => Number(row.correct_count)), 0);
     winners = leaderboardResult.rows.filter((row) => Number(row.correct_count) === topScore);
   }
@@ -577,6 +577,11 @@ async function prizeCredit(job: Job<PrizeCreditJobPayload>) {
     return { skipped: true, reason: "no-prize" };
   }
 
+  const contestResult = await pool.query<{ title: string }>(
+    "SELECT title FROM contests WHERE id = $1 LIMIT 1",
+    [contestId]
+  );
+
   return withTransaction(async (client) =>
     mutateWalletBalance(client, {
       userId,
@@ -585,7 +590,9 @@ async function prizeCredit(job: Job<PrizeCreditJobPayload>) {
       reason: "prize",
       referenceId: contestId,
       metadata: {
-        source: "contest_prize"
+        source: "contest_prize",
+        contestId,
+        contestTitle: contestResult.rows[0]?.title ?? null
       }
     })
   );
@@ -614,8 +621,8 @@ async function refund(job: Job<RefundJobPayload>) {
     return { skipped: true, reason: "already-refunded" };
   }
 
-  const contestResult = await pool.query<{ entry_fee: string }>(
-    "SELECT entry_fee FROM contests WHERE id = $1 LIMIT 1",
+  const contestResult = await pool.query<{ entry_fee: string; title: string }>(
+    "SELECT entry_fee, title FROM contests WHERE id = $1 LIMIT 1",
     [contestId]
   );
 
@@ -631,7 +638,9 @@ async function refund(job: Job<RefundJobPayload>) {
       reason: "refund",
       referenceId: contestId,
       metadata: {
-        source: "contest_refund"
+        source: "contest_refund",
+        contestId,
+        contestTitle: contestResult.rows[0].title
       }
     })
   );

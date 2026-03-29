@@ -7,9 +7,10 @@ import { LoginCard } from "../../components/login-card";
 import { SiteShell } from "../../components/site-shell";
 import { useFrontendSession } from "../../components/session-panel";
 import {
+  type PrizeRule,
   addMoney,
+  getAllContests,
   getContestHistory,
-  getOpenContests,
   getWalletBalance,
   getWalletTransactions,
   joinContest
@@ -18,11 +19,13 @@ import {
 interface ContestItem {
   id: string;
   title: string;
+  status: string;
   entry_fee: string;
   max_members: number;
   member_count: number;
   starts_at: string;
   prize_pool: string;
+  prize_rule: PrizeRule;
 }
 
 interface WalletTransactionItem {
@@ -54,6 +57,20 @@ interface ContestHistoryItem {
   prize_amount: string;
   correct_count: string;
   prize_pool: string;
+  prize_rule: PrizeRule;
+}
+
+type ContestTab = "all" | "current" | "future" | "past";
+const CONTEST_TAB_STORAGE_KEY = "quiz-app-dashboard-contest-tab";
+
+function getPrizeRuleLabel(prizeRule: PrizeRule) {
+  return prizeRule === "all_correct" ? "All Correct" : "Top Scorer";
+}
+
+function getPrizeRuleDescription(prizeRule: PrizeRule) {
+  return prizeRule === "all_correct"
+    ? "Only players with full marks win this contest."
+    : "The highest correct score wins; ties split the prize.";
 }
 
 function formatTransactionReason(transaction: WalletTransactionItem) {
@@ -70,14 +87,39 @@ function formatTransactionReason(transaction: WalletTransactionItem) {
   if (transaction.reason === "prize") {
     return transaction.metadata?.contestTitle
       ? `Prize won: ${transaction.metadata.contestTitle}`
-      : "Contest prize";
+      : transaction.reference_id
+        ? `Prize won: Contest ${transaction.reference_id}`
+        : "Contest prize";
   }
 
   if (transaction.reason === "refund") {
-    return "Contest refund";
+    return transaction.metadata?.contestTitle
+      ? `Refund received: ${transaction.metadata.contestTitle}`
+      : transaction.reference_id
+        ? `Refund received: Contest ${transaction.reference_id}`
+        : "Contest refund";
   }
 
   return "Wallet update";
+}
+
+function getContestBucket(contest: ContestItem) {
+  const startsAtMs = new Date(contest.starts_at).getTime();
+  const now = Date.now();
+
+  if (contest.status === "ended" || contest.status === "cancelled") {
+    return "past";
+  }
+
+  if (contest.status === "live" || contest.status === "open") {
+    return "current";
+  }
+
+  if (contest.status === "draft" && startsAtMs > now) {
+    return "future";
+  }
+
+  return "past";
 }
 
 export default function DashboardPage() {
@@ -88,6 +130,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<WalletTransactionItem[]>([]);
   const [amount, setAmount] = useState("50");
   const [contestLookupId, setContestLookupId] = useState("");
+  const [contestTab, setContestTab] = useState<ContestTab>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +139,51 @@ export default function DashboardPage() {
   const totalPrizeWon = contestHistory
     .reduce((total, contest) => total + Number(contest.prize_amount), 0)
     .toFixed(2);
+  const currentContests = contests.filter((contest) => getContestBucket(contest) === "current");
+  const futureContests = contests.filter((contest) => getContestBucket(contest) === "future");
+  const pastContests = contests.filter((contest) => getContestBucket(contest) === "past");
+  const visibleContests =
+    contestTab === "all"
+      ? contests
+      : contestTab === "current"
+        ? currentContests
+        : contestTab === "future"
+          ? futureContests
+          : pastContests;
+
+  const tabMeta: Record<
+    ContestTab,
+    { eyebrow: string; title: string; empty: string; label: string; icon: string }
+  > = {
+    all: {
+      eyebrow: "All Contests",
+      title: "Every contest in one place",
+      empty: "No contests available right now.",
+      label: "All",
+      icon: "Grid"
+    },
+    current: {
+      eyebrow: "Current Contests",
+      title: "Join what is active now",
+      empty: "No current contests right now. Create or publish one from the admin console.",
+      label: "Current",
+      icon: "Live"
+    },
+    future: {
+      eyebrow: "Upcoming Contests",
+      title: "Future contests to watch",
+      empty: "No future contests scheduled right now.",
+      label: "Upcoming",
+      icon: "Soon"
+    },
+    past: {
+      eyebrow: "Past Contests",
+      title: "Previous rounds and results",
+      empty: "No past contests yet.",
+      label: "Past",
+      icon: "Done"
+    }
+  };
 
   async function loadData(accessToken: string) {
     setError(null);
@@ -103,7 +191,7 @@ export default function DashboardPage() {
     try {
       const [walletResult, contestResult, transactionsResult, contestHistoryResult] = await Promise.all([
         getWalletBalance(accessToken),
-        getOpenContests(),
+        getAllContests(),
         getWalletTransactions(accessToken),
         getContestHistory(accessToken)
       ]);
@@ -118,6 +206,17 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedTab = window.localStorage.getItem(CONTEST_TAB_STORAGE_KEY) as ContestTab | null;
+    if (storedTab && ["all", "current", "future", "past"].includes(storedTab)) {
+      setContestTab(storedTab);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!session?.accessToken) {
       return;
     }
@@ -126,6 +225,14 @@ export default function DashboardPage() {
       void loadData(session.accessToken);
     });
   }, [session]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(CONTEST_TAB_STORAGE_KEY, contestTab);
+  }, [contestTab]);
 
   if (!isReady) {
     return (
@@ -285,11 +392,14 @@ export default function DashboardPage() {
 
         <div className="list">
           {transactions.length === 0 ? (
-            <div className="notice warn">No wallet transactions yet.</div>
+            <div className="notice warn">
+              No wallet transactions yet. After this user adds money, joins a contest, gets a refund, or wins a prize,
+              the ledger will show debit and credit history here.
+            </div>
           ) : null}
 
           {transactions.map((transaction) => (
-            <article key={transaction.id} className="notice">
+            <article key={transaction.id} className="notice notice-luxe">
               <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <strong>{formatTransactionReason(transaction)}</strong>
@@ -330,16 +440,19 @@ export default function DashboardPage() {
 
         <div className="list">
           {contestHistory.length === 0 ? (
-            <div className="notice warn">No contest attempts yet.</div>
+            <div className="notice warn">
+              No contest attempts yet. This section fills only after the current user joins at least one contest.
+            </div>
           ) : null}
 
           {contestHistory.map((contest) => (
-            <article key={contest.contest_id} className="contest-card">
+            <article key={contest.contest_id} className="contest-card contest-card--luxe">
               <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
                   <div className="contest-meta">
                     <span className="pill">{contest.status}</span>
+                    <span className="pill">{getPrizeRuleLabel(contest.prize_rule)}</span>
                     <span className="pill gold">Entry Rs {contest.entry_fee}</span>
                     <span className="pill">{contest.correct_count} correct</span>
                     <span className={contest.is_winner ? "pill gold" : "pill rose"}>
@@ -361,6 +474,9 @@ export default function DashboardPage() {
               </div>
 
               <p className="muted" style={{ marginBottom: 0 }}>
+                {getPrizeRuleDescription(contest.prize_rule)}
+              </p>
+              <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>
                 Joined {new Date(contest.joined_at).toLocaleString()} | Starts {new Date(contest.starts_at).toLocaleString()}
               </p>
               <div className="mono" style={{ marginTop: 10, fontSize: "0.84rem" }}>
@@ -374,24 +490,42 @@ export default function DashboardPage() {
       <section style={{ marginTop: 22 }}>
         <div className="hero-actions" style={{ justifyContent: "space-between" }}>
           <div>
-            <div className="eyebrow">Open Contests</div>
-            <h2 className="section-title">Join what is live next</h2>
+            <div className="eyebrow">{tabMeta[contestTab].eyebrow}</div>
+            <h2 className="section-title">{tabMeta[contestTab].title}</h2>
           </div>
         </div>
 
-        <div className="list">
-          {contests.length === 0 ? (
-            <div className="notice warn">
-              No open contests right now. Create or publish one from the admin console.
-            </div>
-          ) : null}
+        <div className="tab-row" style={{ marginTop: 14, marginBottom: 18 }}>
+          {(["all", "current", "future", "past"] as ContestTab[]).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={contestTab === tab ? "tab-button tab-button--active" : "tab-button"}
+              onClick={() => setContestTab(tab)}
+            >
+              <span className="tab-button__icon">{tabMeta[tab].icon}</span>
+              <span className="tab-button__label">
+                {tabMeta[tab].label}
+                {tab === "all" ? ` (${contests.length})` : null}
+                {tab === "current" ? ` (${currentContests.length})` : null}
+                {tab === "future" ? ` (${futureContests.length})` : null}
+                {tab === "past" ? ` (${pastContests.length})` : null}
+              </span>
+            </button>
+          ))}
+        </div>
 
-          {contests.map((contest) => (
-            <article key={contest.id} className="contest-card">
+        <div className="list">
+          {visibleContests.length === 0 ? <div className="notice warn">{tabMeta[contestTab].empty}</div> : null}
+
+          {visibleContests.map((contest) => (
+            <article key={contest.id} className="contest-card contest-card--luxe">
               <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
                   <div className="contest-meta">
+                    <span className="pill">{contest.status}</span>
+                    <span className="pill">{getPrizeRuleLabel(contest.prize_rule)}</span>
                     <span className="pill gold">Entry Rs {contest.entry_fee}</span>
                     <span className="pill">{contest.member_count}/{contest.max_members} joined</span>
                     <span className="pill rose">Prize Rs {contest.prize_pool}</span>
@@ -399,36 +533,64 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="stack-row">
-                  <button
-                    type="button"
-                    className="solid-button"
-                    onClick={() => {
-                      setMessage(null);
-                      setError(null);
+                  {contest.status === "open" || contest.status === "live" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="solid-button"
+                        disabled={contest.status !== "open" || contest.member_count >= contest.max_members}
+                        onClick={() => {
+                          setMessage(null);
+                          setError(null);
 
-                      startTransition(async () => {
-                        try {
-                          const result = await joinContest(session.accessToken, contest.id);
-                          setWalletBalance(result.wallet_balance);
-                          setMessage(`Joined ${contest.title}. Prize pool is now Rs ${result.prize_pool}.`);
-                          await loadData(session.accessToken);
-                        } catch (joinError) {
-                          setError(joinError instanceof Error ? joinError.message : "Join failed");
-                        }
-                      });
-                    }}
-                  >
-                    Join Contest
-                  </button>
+                          startTransition(async () => {
+                            try {
+                              const result = await joinContest(session.accessToken, contest.id);
+                              setWalletBalance(result.wallet_balance);
+                              setMessage(`Joined ${contest.title}. Prize pool is now Rs ${result.prize_pool}.`);
+                              await loadData(session.accessToken);
+                            } catch (joinError) {
+                              setError(joinError instanceof Error ? joinError.message : "Join failed");
+                            }
+                          });
+                        }}
+                      >
+                        {contest.status === "open" ? "Join Contest" : "Live Now"}
+                      </button>
 
-                  <Link href={`/contests/${contest.id}/live`} className="ghost-button">
-                    Open Live View
-                  </Link>
+                      <Link href={`/contests/${contest.id}/live`} className="ghost-button">
+                        Open Live View
+                      </Link>
+                    </>
+                  ) : null}
+
+                  {contest.status === "draft" ? (
+                    <Link href={`/contests/${contest.id}/live`} className="ghost-button">
+                      Preview Contest
+                    </Link>
+                  ) : null}
+
+                  {contest.status === "ended" || contest.status === "cancelled" ? (
+                    <>
+                      <Link href={`/contests/${contest.id}/live`} className="ghost-button">
+                        Open Contest
+                      </Link>
+                      {contest.status === "ended" ? (
+                        <Link href={`/contests/${contest.id}/leaderboard`} className="solid-button">
+                          View Leaderboard
+                        </Link>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
               </div>
 
               <p className="muted" style={{ marginBottom: 0 }}>
-                Starts at {new Date(contest.starts_at).toLocaleString()}
+                {getPrizeRuleDescription(contest.prize_rule)}
+              </p>
+              <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>
+                {contest.status === "ended" || contest.status === "cancelled" ? "Started" : "Starts"} at{" "}
+                {new Date(contest.starts_at).toLocaleString()}
               </p>
               <div className="mono" style={{ marginTop: 10, fontSize: "0.84rem" }}>
                 {contest.id}

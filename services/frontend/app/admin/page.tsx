@@ -80,6 +80,8 @@ export default function AdminPage() {
     userId: "",
     amount: "50"
   });
+  const activeContests = contests.filter((contest) => contest.status === "open" || contest.status === "live").length;
+  const endedContests = contests.filter((contest) => contest.status === "ended").length;
 
   async function loadAdminData(accessToken: string) {
     setError(null);
@@ -161,11 +163,44 @@ export default function AdminPage() {
       title="Admin Console"
       subtitle="Create draft contests, attach questions, publish schedules, and watch queue state without touching the backend code directly."
     >
+      <section className="admin-hero">
+        <div className="admin-hero__content">
+          <div className="eyebrow">Control Room</div>
+          <h2 className="section-title">Run live contests with a calmer, clearer operations surface</h2>
+          <p className="muted">
+            Draft contests, load questions, inspect queue pressure, and credit wallets from one page built to feel more like a modern live ops desk.
+          </p>
+        </div>
+
+        <div className="admin-hero__stats">
+          <div className="admin-stat-card">
+            <span className="eyebrow">Contests</span>
+            <div className="stat-value">{contests.length}</div>
+            <div className="muted">Total tracked contests</div>
+          </div>
+          <div className="admin-stat-card">
+            <span className="eyebrow">Active</span>
+            <div className="stat-value">{activeContests}</div>
+            <div className="muted">Open or live right now</div>
+          </div>
+          <div className="admin-stat-card">
+            <span className="eyebrow">Jobs</span>
+            <div className="stat-value">{jobs.length}</div>
+            <div className="muted">Queued or recoverable items</div>
+          </div>
+          <div className="admin-stat-card">
+            <span className="eyebrow">Results</span>
+            <div className="stat-value">{endedContests}</div>
+            <div className="muted">Completed contests</div>
+          </div>
+        </div>
+      </section>
+
       {message ? <div className="notice">{message}</div> : null}
       {error ? <div className="notice error" style={{ marginTop: 14 }}>{error}</div> : null}
 
       <div className="grid two" style={{ marginTop: 20 }}>
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Create Contest</div>
           <label className="field">
             <span>Title</span>
@@ -243,7 +278,7 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Add Question</div>
           <label className="field">
             <span>Contest</span>
@@ -403,11 +438,11 @@ export default function AdminPage() {
       </div>
 
       <div className="grid two" style={{ marginTop: 22 }}>
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Contest Monitor</div>
           <div className="list" style={{ marginTop: 16 }}>
             {contests.map((contest) => (
-              <div key={contest.id} className="contest-card">
+              <div key={contest.id} className="contest-card contest-card--luxe">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
@@ -475,12 +510,12 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Job Monitor</div>
           <div className="list" style={{ marginTop: 16 }}>
             {jobs.length === 0 ? <div className="notice warn">No queued jobs right now.</div> : null}
             {jobs.map((job) => (
-              <div key={job.job_id} className="notice">
+              <div key={job.job_id} className="notice notice-luxe">
                 <div className="pill-row" style={{ marginBottom: 10 }}>
                   <span className="pill">{job.queue}</span>
                   <span className="pill gold">{job.job_name}</span>
@@ -528,7 +563,7 @@ export default function AdminPage() {
       </div>
 
       <div className="grid two" style={{ marginTop: 22 }}>
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Admin Wallet Credit</div>
           <label className="field">
             <span>User</span>
@@ -583,11 +618,11 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <div className="card">
+        <div className="card card-luxe">
           <div className="eyebrow">Users</div>
           <div className="list" style={{ marginTop: 16 }}>
             {users.map((user) => (
-              <div key={user.id} className="notice">
+              <div key={user.id} className="notice notice-luxe">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <strong>{user.name}</strong>

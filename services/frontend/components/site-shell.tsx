@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import clsx from "clsx";
 
+import { useFrontendSession } from "./session-panel";
 import { logout } from "../lib/api";
-import { clearStoredSession, getStoredSession, type FrontendSession } from "../lib/session";
+import { clearStoredSession } from "../lib/session";
 
 export function SiteShell({
   children,
@@ -19,20 +19,29 @@ export function SiteShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [session, setSession] = useState<FrontendSession | null>(null);
-
-  useEffect(() => {
-    setSession(getStoredSession());
-  }, [pathname]);
+  const { session } = useFrontendSession();
 
   return (
     <div className="shell">
+      <div className="shell-orb shell-orb--one" />
+      <div className="shell-orb shell-orb--two" />
+      <div className="shell-orb shell-orb--three" />
       <div className="app-layout">
         <aside className="side-nav">
-          <Link href="/" className="brand">
-            <span className="brand-mark">QZ</span>
-            <span className="brand-text">Quick Quiz Arena</span>
-          </Link>
+          <div className="side-nav__top">
+            <Link href="/" className="brand">
+              <span className="brand-mark">QZ</span>
+              <span className="brand-text">Quick Quiz Arena</span>
+            </Link>
+
+            <div className="side-nav__intro">
+              <div className="side-nav__eyebrow">Competitive Quiz Stack</div>
+              <p>
+                Premium contest flow, player wallet visibility, and live operations in one control
+                surface.
+              </p>
+            </div>
+          </div>
 
           <div className="nav-links">
             <Link href="/" className={clsx("nav-item", pathname === "/" && "nav-item--active")}>
@@ -55,7 +64,6 @@ export function SiteShell({
                     // Keep local logout resilient even if the API call fails.
                   } finally {
                     clearStoredSession();
-                    setSession(null);
                     router.push("/");
                     router.refresh();
                   }
@@ -75,7 +83,7 @@ export function SiteShell({
               Dashboard
             </Link>
             {session ? (
-              <span className="status-pill">{session.name} · {session.email}</span>
+              <span className="status-pill">{session.name} | {session.email}</span>
             ) : (
               <span className="status-pill status-pill--ghost">Guest Mode</span>
             )}

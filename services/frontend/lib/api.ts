@@ -1,6 +1,8 @@
 import { API_URL } from "./config";
 import { clearStoredSession, updateStoredAccessToken } from "./session";
 
+export type PrizeRule = "all_correct" | "top_scorer";
+
 export interface LoginResponse {
   access_token: string;
   user: {
@@ -183,8 +185,25 @@ export function getOpenContests() {
       member_count: number;
       starts_at: string;
       prize_pool: string;
+      prize_rule: PrizeRule;
     }>;
   }>("/contests");
+}
+
+export function getAllContests() {
+  return apiFetch<{
+    contests: Array<{
+      id: string;
+      title: string;
+      status: string;
+      entry_fee: string;
+      max_members: number;
+      member_count: number;
+      starts_at: string;
+      prize_pool: string;
+      prize_rule: PrizeRule;
+    }>;
+  }>("/contests/all");
 }
 
 export function getContestHistory(accessToken: string) {
@@ -202,6 +221,7 @@ export function getContestHistory(accessToken: string) {
       prize_amount: string;
       correct_count: string;
       prize_pool: string;
+      prize_rule: PrizeRule;
     }>;
   }>("/contests/history", undefined, accessToken);
 }
@@ -225,6 +245,11 @@ export function joinContest(accessToken: string, contestId: string) {
 
 export function getLeaderboard(contestId: string) {
   return apiFetch<{
+    contest: {
+      id: string;
+      title: string;
+      prize_rule: PrizeRule;
+    };
     leaderboard: Array<{
       user_id: string;
       name: string;
@@ -256,7 +281,7 @@ export function createContest(
     starts_at: string;
     entry_fee: number;
     max_members: number;
-    prize_rule: "all_correct" | "top_scorer";
+    prize_rule: PrizeRule;
   }
 ) {
   return apiFetch<{ contest: { id: string } }>(
