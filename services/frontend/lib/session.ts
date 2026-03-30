@@ -34,7 +34,7 @@ export function getStoredSession(): FrontendSession | null {
     return null;
   }
 
-  const raw = window.localStorage.getItem(SESSION_KEY);
+  const raw = window.sessionStorage.getItem(SESSION_KEY);
   if (!raw) {
     return null;
   }
@@ -43,13 +43,13 @@ export function getStoredSession(): FrontendSession | null {
     const parsed = JSON.parse(raw) as FrontendSession;
 
     if (parsed.expiresAt && parsed.expiresAt <= Date.now()) {
-      window.localStorage.removeItem(SESSION_KEY);
+      window.sessionStorage.removeItem(SESSION_KEY);
       return null;
     }
 
     return parsed;
   } catch {
-    window.localStorage.removeItem(SESSION_KEY);
+    window.sessionStorage.removeItem(SESSION_KEY);
     return null;
   }
 }
@@ -60,12 +60,12 @@ export function setStoredSession(session: FrontendSession) {
     expiresAt: session.expiresAt ?? getTokenExpiry(session.accessToken)
   };
 
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+  window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
   emitSessionChange();
 }
 
 export function clearStoredSession() {
-  window.localStorage.removeItem(SESSION_KEY);
+  window.sessionStorage.removeItem(SESSION_KEY);
   emitSessionChange();
 }
 

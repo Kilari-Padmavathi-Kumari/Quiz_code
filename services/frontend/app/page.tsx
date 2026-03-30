@@ -5,7 +5,7 @@ import { SiteShell } from "../components/site-shell";
 
 const stats = [
   { value: "100", label: "players per contest" },
-  { value: "15s", label: "tight answer windows" },
+  { value: "20s", label: "tight answer windows" },
   { value: "24/7", label: "recovery-ready operations" }
 ];
 
@@ -43,12 +43,40 @@ const steps = [
   "Track debits, winnings, and results from the same dashboard."
 ];
 
-export default function HomePage() {
+const heroHighlights = [
+  "Fast join flow",
+  "Live question rooms",
+  "Transparent wallet history"
+];
+
+const pulseMetrics = [
+  { value: "03", label: "questions loaded" },
+  { value: "02", label: "winners projected" },
+  { value: "Rs 370", label: "split per winner" }
+];
+
+const mobileFeatureBadges = [
+  "Swipe-friendly layout",
+  "One-tap contest access",
+  "Realtime result energy"
+];
+
+export default async function HomePage({
+  searchParams
+}: {
+  searchParams?: Promise<{ error?: string }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+
   return (
     <SiteShell
       title="A modern live quiz arena that feels competitive, polished, and reliable."
       subtitle="Built for sharp first impressions: premium player flows, resilient contest operations, and real-time gameplay that still feels trustworthy under pressure."
     >
+      {resolvedSearchParams?.error ? (
+        <div className="notice error" style={{ marginBottom: 18 }}>{resolvedSearchParams.error}</div>
+      ) : null}
+
       <section className="landing-hero">
         <div className="landing-hero__content landing-fade-up">
           <div className="landing-kicker landing-fade-up landing-delay-1">Live Quiz Platform</div>
@@ -60,6 +88,28 @@ export default function HomePage() {
             wallet-backed transaction history, and admin recovery tooling into one experience that
             feels closer to a modern game product than a demo screen.
           </p>
+
+          <div className="landing-mobile-banner landing-fade-up landing-delay-2">
+            <div>
+              <div className="eyebrow">Mobile First</div>
+              <strong>Designed to feel sharp on a phone before anything else.</strong>
+            </div>
+            <div className="landing-mobile-banner__badges">
+              {mobileFeatureBadges.map((item) => (
+                <span key={item} className="landing-mobile-badge">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="landing-hero__chips landing-fade-up landing-delay-2">
+            {heroHighlights.map((item) => (
+              <span key={item} className="landing-chip-soft">
+                {item}
+              </span>
+            ))}
+          </div>
 
           <div className="landing-actions landing-fade-up landing-delay-3">
             <Link href="/dashboard" className="solid-button">
@@ -78,54 +128,73 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+
+          <div className="landing-spotlight landing-fade-up landing-delay-4">
+            <div>
+              <div className="eyebrow">Quick Snapshot</div>
+              <strong>Built for small contest demos that still feel premium</strong>
+            </div>
+            <span>Players, wallets, leaderboard, and admin controls in one flow.</span>
+          </div>
         </div>
 
         <div className="landing-hero__side landing-fade-up landing-delay-2">
-          <div className="landing-preview landing-float">
-            <div className="landing-preview__top">
-              <span className="chip">Premium Player Flow</span>
-              <span className="landing-preview__badge">Ready for Demo</span>
-            </div>
-
-            <div className="landing-preview__board">
-              <div className="landing-preview__panel landing-preview__panel--primary landing-hover-card">
-                <div className="eyebrow">Contest Pulse</div>
-                <h3>Friday Night Sprint</h3>
-                <div className="pill-row">
-                  <span className="pill gold">Entry Rs 10</span>
-                  <span className="pill">74/100 joined</span>
-                  <span className="pill rose">Prize Rs 740</span>
-                </div>
+          <div className="landing-preview landing-float landing-preview--phone">
+            <div className="landing-phone-shell">
+              <div className="landing-phone-shell__notch" />
+              <div className="landing-preview__top">
+                <span className="chip">Premium Player Flow</span>
+                <span className="landing-preview__badge">Ready for Demo</span>
               </div>
 
-              <div className="landing-preview__panel landing-hover-card">
-                <div className="eyebrow">Wallet Story</div>
-                <div className="landing-mini-list">
-                  <div className="landing-mini-item">
-                    <strong>- Rs 10</strong>
-                    <span>Contest entry debit</span>
+              <div className="landing-preview__board">
+                <div className="landing-preview__panel landing-preview__panel--primary landing-hover-card">
+                  <div className="eyebrow">Contest Pulse</div>
+                  <h3>Friday Night Sprint</h3>
+                  <div className="pill-row">
+                    <span className="pill gold">Entry Rs 10</span>
+                    <span className="pill">74/100 joined</span>
+                    <span className="pill rose">Prize Rs 740</span>
                   </div>
-                  <div className="landing-mini-item">
-                    <strong>+ Rs 120</strong>
-                    <span>Prize credit after results</span>
+                  <div className="landing-pulse-grid">
+                    {pulseMetrics.map((metric) => (
+                      <div key={metric.label} className="landing-pulse-metric">
+                        <strong>{metric.value}</strong>
+                        <span>{metric.label}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
 
-              <div className="landing-preview__panel landing-preview__panel--accent landing-hover-card">
-                <div className="eyebrow">Leaderboard Feel</div>
-                <div className="landing-mini-list">
-                  <div className="landing-mini-rank">
-                    <span>#1</span>
-                    <strong>Player One</strong>
+                <div className="landing-preview__panel landing-hover-card">
+                  <div className="eyebrow">Wallet Story</div>
+                  <div className="landing-mini-list">
+                    <div className="landing-mini-item">
+                      <strong>- Rs 10</strong>
+                      <span>Paid Rs 10 to join contest</span>
+                    </div>
+                    <div className="landing-mini-item">
+                      <strong>+ Rs 740</strong>
+                      <span>Won Rs 740 after contest ended</span>
+                    </div>
                   </div>
-                  <div className="landing-mini-rank">
-                    <span>#2</span>
-                    <strong>Player Two</strong>
-                  </div>
-                  <div className="landing-mini-rank">
-                    <span>#3</span>
-                    <strong>You</strong>
+                </div>
+
+                <div className="landing-preview__panel landing-preview__panel--accent landing-hover-card">
+                  <div className="eyebrow">Leaderboard Feel</div>
+                  <div className="landing-mini-list">
+                    <div className="landing-mini-rank">
+                      <span>#1</span>
+                      <strong>Player One</strong>
+                    </div>
+                    <div className="landing-mini-rank">
+                      <span>#2</span>
+                      <strong>Player Two</strong>
+                    </div>
+                    <div className="landing-mini-rank">
+                      <span>#3</span>
+                      <strong>You</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -133,6 +202,27 @@ export default function HomePage() {
           </div>
 
           <LoginCard />
+        </div>
+      </section>
+
+      <section className="landing-mobile-strip" style={{ marginTop: 28 }}>
+        <div className="landing-mobile-strip__intro">
+          <span className="chip">Phone Experience</span>
+          <h3 className="section-title">A compact front page that reads fast on mobile</h3>
+        </div>
+        <div className="landing-mobile-strip__grid">
+          <div className="landing-mobile-tile landing-hover-card">
+            <strong>Quick actions</strong>
+            <p>Dashboard and admin entry points stay above the fold without crowding the screen.</p>
+          </div>
+          <div className="landing-mobile-tile landing-hover-card">
+            <strong>Readable cards</strong>
+            <p>Contest, wallet, and leaderboard samples stack cleanly like app screens instead of wide tables.</p>
+          </div>
+          <div className="landing-mobile-tile landing-hover-card">
+            <strong>Clear hierarchy</strong>
+            <p>Bigger headlines, tighter spacing, and grouped chips make the first impression feel more premium.</p>
+          </div>
         </div>
       </section>
 

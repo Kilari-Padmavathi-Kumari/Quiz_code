@@ -9,6 +9,7 @@ const parseOrigins = (...values: Array<string | undefined>) =>
 
 export const config = {
   apiPort: toNumber(process.env.API_PORT, 4000),
+  apiBaseUrl: process.env.API_BASE_URL ?? `http://localhost:${toNumber(process.env.API_PORT, 4000)}`,
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:3000",
   frontendUrls: [
     ...new Set(
@@ -26,8 +27,13 @@ export const config = {
   refreshTokenTtlDays: toNumber(process.env.REFRESH_TOKEN_TTL_DAYS, 30),
   cookieDomain: process.env.COOKIE_DOMAIN ?? "localhost",
   cookieSecure: process.env.COOKIE_SECURE === "true",
-  adminEmail: (process.env.ADMIN_EMAIL ?? "admin.quiz@gmail.com").toLowerCase(),
+  adminEmail: (process.env.ADMIN_EMAIL ?? "padmavathi.kilari@fissionlabs.com").toLowerCase(),
   authCodeTtlMinutes: toNumber(process.env.AUTH_CODE_TTL_MINUTES, 10),
   authDevCode: process.env.AUTH_DEV_CODE ?? "123456",
-  authDevPassword: process.env.AUTH_DEV_PASSWORD ?? "Quiz@1234"
+  authDevPassword: process.env.AUTH_DEV_PASSWORD ?? "Quiz@1234",
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  googleRedirectUri:
+    process.env.GOOGLE_REDIRECT_URI ??
+    `${process.env.API_BASE_URL ?? `http://localhost:${toNumber(process.env.API_PORT, 4000)}`}/auth/google/callback`
 };

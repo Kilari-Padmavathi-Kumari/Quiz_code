@@ -22,6 +22,14 @@ const jwtIssuer = process.env.JWT_ISSUER ?? "quiz-app";
 const jwtAudience = process.env.JWT_AUDIENCE ?? "quiz-app-users";
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("[game-server] Unhandled promise rejection", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[game-server] Uncaught exception", error);
+});
+
 const httpServer = createServer();
 const io = new Server(httpServer, {
   cors: {
@@ -390,5 +398,5 @@ io.on("connection", async (socket) => {
 });
 
 httpServer.listen(gamePort, "0.0.0.0", () => {
-  console.log(`Game server listening on ${gamePort}`);
+  console.log(`[game-server] Listening on ${gamePort}`);
 });

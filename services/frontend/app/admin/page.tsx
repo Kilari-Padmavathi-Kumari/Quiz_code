@@ -8,14 +8,16 @@ import { SiteShell } from "../../components/site-shell";
 import { useFrontendSession } from "../../components/session-panel";
 import {
   addQuestion,
-  creditUserWallet,
+  approveWalletTopupRequest,
   createContest,
   getAdminContests,
   getAdminUsers,
   getJobs,
+  getWalletTopupRequests,
   publishContest,
   rebuildContestCache,
   recoverContest,
+  rejectWalletTopupRequest,
   retryJob
 } from "../../lib/api";
 
@@ -49,16 +51,30 @@ interface AdminUser {
   created_at: string;
 }
 
+interface WalletTopupRequestItem {
+  id: string;
+  user_id: string;
+  amount: string;
+  status: "pending" | "approved" | "rejected";
+  requested_at: string;
+  reviewed_at: string | null;
+  user_name: string;
+  user_email: string;
+}
+
 export default function AdminPage() {
   const { session, isReady } = useFrontendSession();
   const [contests, setContests] = useState<AdminContest[]>([]);
   const [jobs, setJobs] = useState<JobItem[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [walletRequests, setWalletRequests] = useState<WalletTopupRequestItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const [contestForm, setContestForm] = useState({
-    title: "Showcase Sprint",
+    title: "quiz-platform",
     starts_at: new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 16),
     entry_fee: "10",
     max_members: "100",
@@ -68,48 +84,41 @@ export default function AdminPage() {
   const [selectedContestId, setSelectedContestId] = useState("");
   const [questionForm, setQuestionForm] = useState({
     seq: "1",
-    body: "Capital of India?",
-    option_a: "Mumbai",
-    option_b: "New Delhi",
-    option_c: "Chennai",
-    option_d: "Kolkata",
-    correct_option: "b" as "a" | "b" | "c" | "d",
-    time_limit_sec: "15"
-  });
-  const [walletForm, setWalletForm] = useState({
-    userId: "",
-    amount: "50"
+    body: "National Animal of India?",
+    option_a: "Lion",
+    option_b: "Elephant",
+    option_c: "Tiger",
+    option_d: "Leopard",
+    correct_option: "c" as "a" | "b" | "c" | "d",
+    time_limit_sec: "20"
   });
   const activeContests = contests.filter((contest) => contest.status === "open" || contest.status === "live").length;
   const endedContests = contests.filter((contest) => contest.status === "ended").length;
 
   async function loadAdminData(accessToken: string) {
     setError(null);
+    setIsLoadingData(true);
 
     try {
-      const [contestResult, jobsResult, usersResult] = await Promise.all([
+      const [contestResult, jobsResult, usersResult, walletRequestsResult] = await Promise.all([
         getAdminContests(accessToken),
         getJobs(accessToken),
-        getAdminUsers(accessToken)
+        getAdminUsers(accessToken),
+        getWalletTopupRequests(accessToken)
       ]);
 
       setContests(contestResult.contests);
       setJobs(jobsResult.jobs);
       setUsers(usersResult.users);
+      setWalletRequests(walletRequestsResult.requests);
 
       if (!selectedContestId && contestResult.contests.length > 0) {
         setSelectedContestId(contestResult.contests[0].id);
       }
-
-      if (!walletForm.userId && usersResult.users.length > 0) {
-        const firstNonAdmin = usersResult.users.find((user) => !user.is_admin) ?? usersResult.users[0];
-        setWalletForm((current) => ({
-          ...current,
-          userId: firstNonAdmin.id
-        }));
-      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin data");
+    } finally {
+      setIsLoadingData(false);
     }
   }
 
@@ -152,7 +161,7 @@ export default function AdminPage() {
       <SiteShell title="Admin Console" subtitle="This route is reserved for admin users.">
         <div className="notice error">
           The current session does not have admin access. Sign in using
-          <span className="mono"> admin.quiz@gmail.com</span>.
+          <span className="mono"> padmavathi.kilari@fissionlabs.com</span>.
         </div>
       </SiteShell>
     );
@@ -196,8 +205,14 @@ export default function AdminPage() {
         </div>
       </section>
 
-      {message ? <div className="notice">{message}</div> : null}
+      {message ? <div className="notice success">{message}</div> : null}
       {error ? <div className="notice error" style={{ marginTop: 14 }}>{error}</div> : null}
+      {isLoadingData ? (
+        <div className="loading-grid" style={{ marginTop: 20 }}>
+          <div className="loading-card" />
+          <div className="loading-card" />
+        </div>
+      ) : null}
 
       <div className="grid two" style={{ marginTop: 20 }}>
         <div className="card card-luxe">
@@ -251,9 +266,11 @@ export default function AdminPage() {
           <button
             type="button"
             className="solid-button"
+            disabled={busyAction === "create-contest"}
             onClick={() => {
               setMessage(null);
               setError(null);
+              setBusyAction("create-contest");
 
               startTransition(async () => {
                 try {
@@ -266,15 +283,17 @@ export default function AdminPage() {
                   });
 
                   setSelectedContestId(result.contest.id);
-                  setMessage(`Created contest ${result.contest.id}`);
+                  setMessage(`Success: created contest ${result.contest.id}.`);
                   await loadAdminData(session.accessToken);
                 } catch (createError) {
                   setError(createError instanceof Error ? createError.message : "Contest creation failed");
+                } finally {
+                  setBusyAction(null);
                 }
               });
             }}
           >
-            Create Contest
+            {busyAction === "create-contest" ? "Creating..." : "Create Contest"}
           </button>
         </div>
 
@@ -379,6 +398,7 @@ export default function AdminPage() {
 
                 setMessage(null);
                 setError(null);
+                setBusyAction("add-question");
 
                 startTransition(async () => {
                   try {
@@ -393,7 +413,7 @@ export default function AdminPage() {
                       time_limit_sec: Number(questionForm.time_limit_sec)
                     });
 
-                    setMessage(`Added question ${result.question.seq} to ${selectedContestId}`);
+                    setMessage(`Success: added question ${result.question.seq} to ${selectedContestId}.`);
                     setQuestionForm((current) => ({
                       ...current,
                       seq: String(Number(current.seq) + 1)
@@ -401,11 +421,13 @@ export default function AdminPage() {
                     await loadAdminData(session.accessToken);
                   } catch (questionError) {
                     setError(questionError instanceof Error ? questionError.message : "Question add failed");
+                  } finally {
+                    setBusyAction(null);
                   }
                 });
               }}
             >
-              Add Question
+              {busyAction === "add-question" ? "Adding..." : "Add Question"}
             </button>
 
             <button
@@ -419,19 +441,22 @@ export default function AdminPage() {
 
                 setMessage(null);
                 setError(null);
+                setBusyAction("publish-contest");
 
                 startTransition(async () => {
                   try {
                     await publishContest(session.accessToken, selectedContestId);
-                    setMessage(`Published contest ${selectedContestId}`);
+                    setMessage(`Success: published contest ${selectedContestId}.`);
                     await loadAdminData(session.accessToken);
                   } catch (publishError) {
                     setError(publishError instanceof Error ? publishError.message : "Publish failed");
+                  } finally {
+                    setBusyAction(null);
                   }
                 });
               }}
             >
-              Publish Selected Contest
+              {busyAction === "publish-contest" ? "Publishing..." : "Publish Selected Contest"}
             </button>
           </div>
         </div>
@@ -441,6 +466,12 @@ export default function AdminPage() {
         <div className="card card-luxe">
           <div className="eyebrow">Contest Monitor</div>
           <div className="list" style={{ marginTop: 16 }}>
+            {contests.length === 0 ? (
+              <div className="empty-state">
+                <strong>No contests yet</strong>
+                <p>Create a contest above and it will appear here for recovery, publishing, and result tracking.</p>
+              </div>
+            ) : null}
             {contests.map((contest) => (
               <div key={contest.id} className="contest-card contest-card--luxe">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -513,7 +544,12 @@ export default function AdminPage() {
         <div className="card card-luxe">
           <div className="eyebrow">Job Monitor</div>
           <div className="list" style={{ marginTop: 16 }}>
-            {jobs.length === 0 ? <div className="notice warn">No queued jobs right now.</div> : null}
+            {jobs.length === 0 ? (
+              <div className="empty-state">
+                <strong>No queued jobs right now</strong>
+                <p>Once contests are published or retried, queue activity and failures will show up here.</p>
+              </div>
+            ) : null}
             {jobs.map((job) => (
               <div key={job.job_id} className="notice notice-luxe">
                 <div className="pill-row" style={{ marginBottom: 10 }}>
@@ -564,63 +600,119 @@ export default function AdminPage() {
 
       <div className="grid two" style={{ marginTop: 22 }}>
         <div className="card card-luxe">
-          <div className="eyebrow">Admin Wallet Credit</div>
-          <label className="field">
-            <span>User</span>
-            <select
-              value={walletForm.userId}
-              onChange={(event) => setWalletForm((current) => ({ ...current, userId: event.target.value }))}
-            >
-              <option value="">Select user</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} | {user.email} | Rs {user.wallet_balance}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Amount</span>
-            <input
-              value={walletForm.amount}
-              onChange={(event) => setWalletForm((current) => ({ ...current, amount: event.target.value }))}
-            />
-          </label>
-          <button
-            type="button"
-            className="solid-button"
-            disabled={!walletForm.userId}
-            onClick={() => {
-              if (!walletForm.userId) {
-                setError("Select a user before crediting the wallet.");
-                return;
-              }
+          <div className="eyebrow">Wallet Requests</div>
+          <div className="list" style={{ marginTop: 16 }}>
+            {walletRequests.length === 0 ? (
+              <div className="empty-state">
+                <strong>No wallet requests</strong>
+                <p>User payment requests will appear here and can be approved from this panel.</p>
+              </div>
+            ) : null}
+            {walletRequests.map((walletRequest) => (
+              <div key={walletRequest.id} className="notice notice-luxe">
+                <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <strong>{walletRequest.user_name}</strong>
+                    <div className="muted">{walletRequest.user_email}</div>
+                    <div className="muted">Requested Rs {walletRequest.amount}</div>
+                    <div className="muted">
+                      Requested {new Date(walletRequest.requested_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="pill-row">
+                    <span
+                      className={
+                        walletRequest.status === "approved"
+                          ? "pill gold"
+                          : walletRequest.status === "rejected"
+                            ? "pill rose"
+                            : "pill"
+                      }
+                    >
+                      {walletRequest.status}
+                    </span>
+                    {walletRequest.status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="solid-button"
+                          disabled={
+                            busyAction === `approve-wallet-request:${walletRequest.id}` ||
+                            busyAction === `reject-wallet-request:${walletRequest.id}`
+                          }
+                          onClick={() => {
+                            setMessage(null);
+                            setError(null);
+                            setBusyAction(`approve-wallet-request:${walletRequest.id}`);
 
-              setMessage(null);
-              setError(null);
+                            startTransition(async () => {
+                              try {
+                                await approveWalletTopupRequest(session.accessToken, walletRequest.id);
+                                setMessage(
+                                  `Success: approved Rs ${walletRequest.amount} for ${walletRequest.user_name}.`
+                                );
+                                await loadAdminData(session.accessToken);
+                              } catch (approveError) {
+                                setError(
+                                  approveError instanceof Error ? approveError.message : "Wallet request approval failed"
+                                );
+                              } finally {
+                                setBusyAction(null);
+                              }
+                            });
+                          }}
+                        >
+                          {busyAction === `approve-wallet-request:${walletRequest.id}` ? "Approving..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={
+                            busyAction === `approve-wallet-request:${walletRequest.id}` ||
+                            busyAction === `reject-wallet-request:${walletRequest.id}`
+                          }
+                          onClick={() => {
+                            setMessage(null);
+                            setError(null);
+                            setBusyAction(`reject-wallet-request:${walletRequest.id}`);
 
-              startTransition(async () => {
-                try {
-                  const result = await creditUserWallet(
-                    session.accessToken,
-                    walletForm.userId,
-                    Number(walletForm.amount)
-                  );
-                  setMessage(`Wallet credited. New balance Rs ${result.wallet_balance}`);
-                  await loadAdminData(session.accessToken);
-                } catch (creditError) {
-                  setError(creditError instanceof Error ? creditError.message : "Wallet credit failed");
-                }
-              });
-            }}
-          >
-            Credit Wallet
-          </button>
+                            startTransition(async () => {
+                              try {
+                                await rejectWalletTopupRequest(session.accessToken, walletRequest.id);
+                                setMessage(
+                                  `Success: rejected Rs ${walletRequest.amount} request from ${walletRequest.user_name}.`
+                                );
+                                await loadAdminData(session.accessToken);
+                              } catch (rejectError) {
+                                setError(
+                                  rejectError instanceof Error ? rejectError.message : "Wallet request rejection failed"
+                                );
+                              } finally {
+                                setBusyAction(null);
+                              }
+                            });
+                          }}
+                        >
+                          {busyAction === `reject-wallet-request:${walletRequest.id}` ? "Rejecting..." : "Reject"}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="card card-luxe">
           <div className="eyebrow">Users</div>
           <div className="list" style={{ marginTop: 16 }}>
+            {users.length === 0 ? (
+              <div className="empty-state">
+                <strong>No users found</strong>
+                <p>Player and admin accounts will appear here after they sign in.</p>
+              </div>
+            ) : null}
             {users.map((user) => (
               <div key={user.id} className="notice notice-luxe">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>

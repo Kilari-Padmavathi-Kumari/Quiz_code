@@ -25,6 +25,14 @@ import {
 } from "@quiz-app/redis";
 import { Job, Worker } from "bullmq";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("[worker-server] Unhandled promise rejection", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[worker-server] Uncaught exception", error);
+});
+
 const connection = {
   url: process.env.REDIS_URL ?? "redis://localhost:6379"
 };
@@ -813,6 +821,10 @@ for (const worker of [contestWorker, payoutWorker]) {
   });
 }
 
-await recoverJobsOnStartup();
-
-console.log("Worker server started");
+try {
+  await recoverJobsOnStartup();
+  console.log("[worker-server] Started");
+} catch (error) {
+  console.error("[worker-server] Failed during startup recovery", error);
+  process.exit(1);
+}

@@ -8,6 +8,7 @@
     "docker:down": "docker compose down",
     "db:migrate": "pnpm --filter @quiz-app/db migrate",
     "db:seed": "pnpm --filter @quiz-app/api-server seed",
+    "db:grant-default-balance": "pnpm --filter @quiz-app/api-server grant-default-balance",
     "dev:api": "pnpm --filter @quiz-app/api-server dev",
     "dev:frontend": "pnpm --filter @quiz-app/frontend dev",
     "dev:game": "pnpm --filter @quiz-app/game-server dev",

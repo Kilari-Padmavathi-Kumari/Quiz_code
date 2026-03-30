@@ -13,6 +13,27 @@ export async function walletRoutes(app: FastifyInstance) {
     wallet_balance: request.user.wallet_balance
   }));
 
+  app.get("/wallet/requests", { preHandler: authenticate }, async (request) => {
+    const result = await pool.query<{
+      id: string;
+      amount: string;
+      status: "pending" | "approved" | "rejected";
+      requested_at: string;
+      reviewed_at: string | null;
+    }>(
+      `
+        SELECT id, amount, status, requested_at, reviewed_at
+        FROM wallet_topup_requests
+        WHERE user_id = $1
+        ORDER BY requested_at DESC
+        LIMIT 20
+      `,
+      [request.user.id]
+    );
+
+    return { requests: result.rows };
+  });
+
   app.get("/wallet/transactions", { preHandler: authenticate }, async (request) => {
     const result = await pool.query<{
       id: string;
@@ -49,28 +70,37 @@ export async function walletRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post("/wallet/add-money", { preHandler: authenticate }, async (request) => {
+  app.post("/wallet/request-money", { preHandler: authenticate }, async (request, reply) => {
     const body = walletAmountSchema.parse(request.body);
 
-    // TEMPORARY PAYMENT NOTE:
-    // This self-serve add-money endpoint exists only because a real payment gateway
-    // is not available yet. Replace this endpoint when Razorpay or another provider
-    // is integrated later.
-    const result = await withTransaction(async (client) =>
-      mutateWalletBalance(client, {
-        userId: request.user.id,
-        amountPaise: Math.round(body.amount * 100),
-        type: "credit",
-        reason: "manual_topup",
-        metadata: {
-          source: "temporary_add_money_button"
-        }
-      })
-    );
+    try {
+      return {
+        success: true,
+        request: (
+          await pool.query<{
+            id: string;
+            amount: string;
+            status: "pending";
+            requested_at: string;
+            reviewed_at: string | null;
+          }>(
+            `
+              INSERT INTO wallet_topup_requests (user_id, amount)
+              VALUES ($1, $2)
+              RETURNING id, amount, status, requested_at, reviewed_at
+            `,
+            [request.user.id, body.amount.toFixed(2)]
+          )
+        ).rows[0]
+      };
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "23505") {
+        return reply.code(409).send({
+          message: "You already have a pending wallet request. Wait for admin approval first."
+        });
+      }
 
-    return {
-      success: true,
-      wallet_balance: (result.balanceAfterPaise / 100).toFixed(2)
-    };
+      throw error;
+    }
   });
 }

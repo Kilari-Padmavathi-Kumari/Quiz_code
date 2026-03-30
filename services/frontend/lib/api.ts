@@ -32,6 +32,11 @@ async function apiFetch<T>(path: string, init?: RequestInit, accessToken?: strin
   try {
     response = await fetch(`${API_URL}${path}`, buildRequest(accessToken));
   } catch (error) {
+    console.error("[frontend] API request failed to reach server", {
+      path,
+      method: init?.method ?? "GET",
+      error
+    });
     throw new Error(
       "Failed to reach the API server. Make sure `pnpm dev:api` is running and `NEXT_PUBLIC_API_URL` matches it."
     );
@@ -57,6 +62,13 @@ async function apiFetch<T>(path: string, init?: RequestInit, accessToken?: strin
       // ignore
     }
 
+    console.error("[frontend] API request returned an error response", {
+      path,
+      method: init?.method ?? "GET",
+      status: response.status,
+      message
+    });
+
     throw new Error(message);
   }
 
@@ -72,6 +84,9 @@ async function refreshAccessToken() {
     });
 
     if (!response.ok) {
+      console.error("[frontend] Access token refresh failed", {
+        status: response.status
+      });
       clearStoredSession();
       window.dispatchEvent(new Event("quiz-app-session-expired"));
       return null;
@@ -80,7 +95,8 @@ async function refreshAccessToken() {
     const body = (await response.json()) as { access_token: string };
     updateStoredAccessToken(body.access_token);
     return body.access_token;
-  } catch {
+  } catch (error) {
+    console.error("[frontend] Access token refresh request crashed", error);
     return null;
   }
 }
@@ -164,9 +180,30 @@ export function getWalletTransactions(accessToken: string) {
   }>("/wallet/transactions", undefined, accessToken);
 }
 
-export function addMoney(accessToken: string, amount: number) {
-  return apiFetch<{ success: boolean; wallet_balance: string }>(
-    "/wallet/add-money",
+export function getWalletRequests(accessToken: string) {
+  return apiFetch<{
+    requests: Array<{
+      id: string;
+      amount: string;
+      status: "pending" | "approved" | "rejected";
+      requested_at: string;
+      reviewed_at: string | null;
+    }>;
+  }>("/wallet/requests", undefined, accessToken);
+}
+
+export function requestMoney(accessToken: string, amount: number) {
+  return apiFetch<{
+    success: boolean;
+    request: {
+      id: string;
+      amount: string;
+      status: "pending";
+      requested_at: string;
+      reviewed_at: string | null;
+    };
+  }>(
+    "/wallet/request-money",
     {
       method: "POST",
       body: JSON.stringify({ amount })
@@ -389,6 +426,43 @@ export function getAdminUsers(accessToken: string) {
       created_at: string;
     }>;
   }>("/admin/users", undefined, accessToken);
+}
+
+export function getWalletTopupRequests(accessToken: string) {
+  return apiFetch<{
+    requests: Array<{
+      id: string;
+      user_id: string;
+      amount: string;
+      status: "pending" | "approved" | "rejected";
+      requested_at: string;
+      reviewed_at: string | null;
+      user_name: string;
+      user_email: string;
+    }>;
+  }>("/admin/wallet-requests", undefined, accessToken);
+}
+
+export function approveWalletTopupRequest(accessToken: string, requestId: string) {
+  return apiFetch<{ success: boolean; wallet_balance: string }>(
+    `/admin/wallet-requests/${requestId}/approve`,
+    {
+      method: "POST",
+      body: JSON.stringify({})
+    },
+    accessToken
+  );
+}
+
+export function rejectWalletTopupRequest(accessToken: string, requestId: string) {
+  return apiFetch<{ success: boolean }>(
+    `/admin/wallet-requests/${requestId}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({})
+    },
+    accessToken
+  );
 }
 
 export function creditUserWallet(accessToken: string, userId: string, amount: number) {

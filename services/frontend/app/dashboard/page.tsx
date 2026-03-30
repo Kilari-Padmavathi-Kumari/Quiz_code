@@ -8,12 +8,13 @@ import { SiteShell } from "../../components/site-shell";
 import { useFrontendSession } from "../../components/session-panel";
 import {
   type PrizeRule,
-  addMoney,
   getAllContests,
   getContestHistory,
   getWalletBalance,
+  getWalletRequests,
   getWalletTransactions,
-  joinContest
+  joinContest,
+  requestMoney
 } from "../../lib/api";
 
 interface ContestItem {
@@ -58,6 +59,14 @@ interface ContestHistoryItem {
   correct_count: string;
   prize_pool: string;
   prize_rule: PrizeRule;
+}
+
+interface WalletRequestItem {
+  id: string;
+  amount: string;
+  status: "pending" | "approved" | "rejected";
+  requested_at: string;
+  reviewed_at: string | null;
 }
 
 type ContestTab = "all" | "current" | "future" | "past";
@@ -128,17 +137,21 @@ export default function DashboardPage() {
   const [contests, setContests] = useState<ContestItem[]>([]);
   const [contestHistory, setContestHistory] = useState<ContestHistoryItem[]>([]);
   const [transactions, setTransactions] = useState<WalletTransactionItem[]>([]);
+  const [walletRequests, setWalletRequests] = useState<WalletRequestItem[]>([]);
   const [amount, setAmount] = useState("50");
   const [contestLookupId, setContestLookupId] = useState("");
   const [contestTab, setContestTab] = useState<ContestTab>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const totalContestAttempts = contestHistory.length;
   const totalWins = contestHistory.filter((contest) => contest.is_winner).length;
   const totalPrizeWon = contestHistory
     .reduce((total, contest) => total + Number(contest.prize_amount), 0)
     .toFixed(2);
+  const pendingWalletRequest = walletRequests.find((request) => request.status === "pending") ?? null;
   const currentContests = contests.filter((contest) => getContestBucket(contest) === "current");
   const futureContests = contests.filter((contest) => getContestBucket(contest) === "future");
   const pastContests = contests.filter((contest) => getContestBucket(contest) === "past");
@@ -187,21 +200,26 @@ export default function DashboardPage() {
 
   async function loadData(accessToken: string) {
     setError(null);
+    setIsLoadingData(true);
 
     try {
-      const [walletResult, contestResult, transactionsResult, contestHistoryResult] = await Promise.all([
+      const [walletResult, contestResult, transactionsResult, contestHistoryResult, walletRequestsResult] = await Promise.all([
         getWalletBalance(accessToken),
         getAllContests(),
         getWalletTransactions(accessToken),
-        getContestHistory(accessToken)
+        getContestHistory(accessToken),
+        getWalletRequests(accessToken)
       ]);
 
       setWalletBalance(walletResult.wallet_balance);
       setContests(contestResult.contests);
       setTransactions(transactionsResult.transactions);
       setContestHistory(contestHistoryResult.contests);
+      setWalletRequests(walletRequestsResult.requests);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load dashboard");
+    } finally {
+      setIsLoadingData(false);
     }
   }
 
@@ -256,14 +274,14 @@ export default function DashboardPage() {
   return (
     <SiteShell
       title="Player Dashboard"
-      subtitle="Top up a local wallet, join a live contest, and jump into the real-time game room."
+      subtitle="Request wallet credit, join a live contest, and jump into the real-time game room."
     >
       <div className="grid three">
         <div className="stat-card">
           <div className="eyebrow">Wallet</div>
           <div className="stat-value">Rs {walletBalance}</div>
           <p className="muted">
-            Temporary local top-up is active because a payment gateway is not integrated yet.
+            Wallet balance updates after an admin approves your credit request.
           </p>
         </div>
 
@@ -286,30 +304,46 @@ export default function DashboardPage() {
 
       <div className="grid two" style={{ marginTop: 18 }}>
         <div className="card">
-          <div className="eyebrow">Add Money</div>
+          <div className="eyebrow">Request Money</div>
           <label className="field" style={{ marginTop: 12 }}>
             <span>Amount</span>
             <input value={amount} onChange={(event) => setAmount(event.target.value)} />
           </label>
+          <p className="muted" style={{ marginTop: 12 }}>
+            This sends a wallet credit request to admin. Your balance will change only after approval.
+          </p>
+          {pendingWalletRequest ? (
+            <div className="notice warn" style={{ marginTop: 12 }}>
+              You already have a pending request for Rs {pendingWalletRequest.amount}. Wait for admin approval first.
+            </div>
+          ) : null}
           <button
             type="button"
             className="solid-button"
+            disabled={busyAction === "request-money" || Boolean(pendingWalletRequest)}
             onClick={() => {
               setMessage(null);
               setError(null);
+              setBusyAction("request-money");
 
               startTransition(async () => {
                 try {
-                  const result = await addMoney(session.accessToken, Number(amount));
-                  setWalletBalance(result.wallet_balance);
-                  setMessage(`Wallet updated to Rs ${result.wallet_balance}`);
+                  await requestMoney(session.accessToken, Number(amount));
+                  setMessage("Success: wallet credit request sent to admin.");
+                  await loadData(session.accessToken);
                 } catch (topupError) {
-                  setError(topupError instanceof Error ? topupError.message : "Top-up failed");
+                  setError(topupError instanceof Error ? topupError.message : "Wallet request failed");
+                } finally {
+                  setBusyAction(null);
                 }
               });
             }}
           >
-            Confirm Add Money
+            {pendingWalletRequest
+              ? "Request Pending"
+              : busyAction === "request-money"
+                ? "Sending request..."
+                : "Send Wallet Request"}
           </button>
         </div>
 
@@ -327,13 +361,14 @@ export default function DashboardPage() {
             <button
               type="button"
               className="ghost-button"
+              disabled={isLoadingData}
               onClick={() => {
                 startTransition(() => {
                   void loadData(session.accessToken);
                 });
               }}
             >
-              Refresh Data
+              {isLoadingData ? "Refreshing..." : "Refresh Data"}
             </button>
           </div>
         </div>
@@ -370,6 +405,9 @@ export default function DashboardPage() {
           <div className="eyebrow">Dashboard Guide</div>
           <div className="list" style={{ marginTop: 14 }}>
             <div className="notice">
+              Send a wallet request first, then wait for admin approval before the balance appears in your account.
+            </div>
+            <div className="notice">
               Join a contest from the list below and the entry fee will appear in wallet history as a debit.
             </div>
             <div className="notice">
@@ -382,6 +420,65 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {message ? <div className="notice success" style={{ marginTop: 18 }}>{message}</div> : null}
+      {error ? <div className="notice error" style={{ marginTop: 18 }}>{error}</div> : null}
+
+      {isLoadingData ? (
+        <div className="loading-grid" style={{ marginTop: 22 }}>
+          <div className="loading-card" />
+          <div className="loading-card" />
+          <div className="loading-card" />
+        </div>
+      ) : null}
+
+      <section style={{ marginTop: 22 }}>
+        <div className="hero-actions" style={{ justifyContent: "space-between" }}>
+          <div>
+            <div className="eyebrow">Request Status</div>
+            <h2 className="section-title">Wallet requests</h2>
+          </div>
+        </div>
+
+        <div className="list">
+          {walletRequests.length === 0 ? (
+            <div className="empty-state">
+              <strong>No wallet requests yet</strong>
+              <p>Send a request above and admin approval updates will appear here.</p>
+            </div>
+          ) : null}
+
+          {walletRequests.map((request) => (
+            <article key={request.id} className="notice notice-luxe">
+              <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <strong>Requested Rs {request.amount}</strong>
+                  <div className="muted">Requested {new Date(request.requested_at).toLocaleString()}</div>
+                  {request.reviewed_at ? (
+                    <div className="muted">Reviewed {new Date(request.reviewed_at).toLocaleString()}</div>
+                  ) : (
+                    <div className="muted">Waiting for admin approval</div>
+                  )}
+                </div>
+
+                <div className="pill-row">
+                  <span
+                    className={
+                      request.status === "approved"
+                        ? "pill gold"
+                        : request.status === "rejected"
+                          ? "pill rose"
+                          : "pill"
+                    }
+                  >
+                    {request.status}
+                  </span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section style={{ marginTop: 22 }}>
         <div className="hero-actions" style={{ justifyContent: "space-between" }}>
           <div>
@@ -392,9 +489,12 @@ export default function DashboardPage() {
 
         <div className="list">
           {transactions.length === 0 ? (
-            <div className="notice warn">
-              No wallet transactions yet. After this user adds money, joins a contest, gets a refund, or wins a prize,
-              the ledger will show debit and credit history here.
+            <div className="empty-state">
+              <strong>No wallet activity yet</strong>
+              <p>
+                After this user adds money, joins a contest, gets a refund, or wins a prize, the ledger will show the
+                full money trail here.
+              </p>
             </div>
           ) : null}
 
@@ -427,9 +527,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {message ? <div className="notice" style={{ marginTop: 18 }}>{message}</div> : null}
-      {error ? <div className="notice error" style={{ marginTop: 18 }}>{error}</div> : null}
-
       <section style={{ marginTop: 22 }}>
         <div className="hero-actions" style={{ justifyContent: "space-between" }}>
           <div>
@@ -440,8 +537,9 @@ export default function DashboardPage() {
 
         <div className="list">
           {contestHistory.length === 0 ? (
-            <div className="notice warn">
-              No contest attempts yet. This section fills only after the current user joins at least one contest.
+            <div className="empty-state">
+              <strong>No contest history yet</strong>
+              <p>This section fills in after the current user joins and completes at least one contest.</p>
             </div>
           ) : null}
 
@@ -516,7 +614,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="list">
-          {visibleContests.length === 0 ? <div className="notice warn">{tabMeta[contestTab].empty}</div> : null}
+          {visibleContests.length === 0 ? (
+            <div className="empty-state">
+              <strong>{tabMeta[contestTab].title}</strong>
+              <p>{tabMeta[contestTab].empty}</p>
+            </div>
+          ) : null}
 
           {visibleContests.map((contest) => (
             <article key={contest.id} className="contest-card contest-card--luxe">
@@ -538,24 +641,35 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         className="solid-button"
-                        disabled={contest.status !== "open" || contest.member_count >= contest.max_members}
+                        disabled={
+                          busyAction === `join:${contest.id}` ||
+                          contest.status !== "open" ||
+                          contest.member_count >= contest.max_members
+                        }
                         onClick={() => {
                           setMessage(null);
                           setError(null);
+                          setBusyAction(`join:${contest.id}`);
 
                           startTransition(async () => {
                             try {
                               const result = await joinContest(session.accessToken, contest.id);
                               setWalletBalance(result.wallet_balance);
-                              setMessage(`Joined ${contest.title}. Prize pool is now Rs ${result.prize_pool}.`);
+                              setMessage(`Success: joined ${contest.title}. Prize pool is now Rs ${result.prize_pool}.`);
                               await loadData(session.accessToken);
                             } catch (joinError) {
                               setError(joinError instanceof Error ? joinError.message : "Join failed");
+                            } finally {
+                              setBusyAction(null);
                             }
                           });
                         }}
                       >
-                        {contest.status === "open" ? "Join Contest" : "Live Now"}
+                        {busyAction === `join:${contest.id}`
+                          ? "Joining..."
+                          : contest.status === "open"
+                            ? "Join Contest"
+                            : "Live Now"}
                       </button>
 
                       <Link href={`/contests/${contest.id}/live`} className="ghost-button">

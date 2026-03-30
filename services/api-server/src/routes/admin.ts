@@ -84,6 +84,38 @@ export async function adminRoutes(app: FastifyInstance) {
     return { contests: result.rows };
   });
 
+  app.get("/admin/wallet-requests", { preHandler: requireAdmin }, async () => {
+    const result = await pool.query<{
+      id: string;
+      user_id: string;
+      amount: string;
+      status: "pending" | "approved" | "rejected";
+      requested_at: string;
+      reviewed_at: string | null;
+      user_name: string;
+      user_email: string;
+    }>(
+      `
+        SELECT
+          wr.id,
+          wr.user_id,
+          wr.amount,
+          wr.status,
+          wr.requested_at,
+          wr.reviewed_at,
+          u.name AS user_name,
+          u.email AS user_email
+        FROM wallet_topup_requests wr
+        JOIN users u ON u.id = wr.user_id
+        ORDER BY
+          CASE WHEN wr.status = 'pending' THEN 0 ELSE 1 END,
+          wr.requested_at DESC
+      `
+    );
+
+    return { requests: result.rows };
+  });
+
   app.post("/admin/contests", { preHandler: requireAdmin }, async (request) => {
     const body = contestSchema.parse(request.body);
     const result = await pool.query(
@@ -193,6 +225,132 @@ export async function adminRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
+  app.post("/admin/wallet-requests/:id/approve", { preHandler: requireAdmin }, async (request, reply) => {
+    const requestId = String((request.params as { id: string }).id);
+
+    const result = await withTransaction(async (client) => {
+      const requestResult = await client.query<{
+        id: string;
+        user_id: string;
+        amount: string;
+        status: "pending" | "approved" | "rejected";
+      }>(
+        `
+          SELECT id, user_id, amount, status
+          FROM wallet_topup_requests
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [requestId]
+      );
+
+      if (requestResult.rowCount !== 1) {
+        return null;
+      }
+
+      const walletRequest = requestResult.rows[0];
+
+      if (walletRequest.status !== "pending") {
+        return { status: "already-reviewed" as const };
+      }
+
+      const walletMutation = await mutateWalletBalance(client, {
+        userId: walletRequest.user_id,
+        amountPaise: Math.round(Number(walletRequest.amount) * 100),
+        type: "credit",
+        reason: "manual_topup",
+        metadata: {
+          approvedByAdminId: request.user.id,
+          approvedWalletRequestId: requestId,
+          source: "wallet_request_approval"
+        }
+      });
+
+      await client.query(
+        `
+          UPDATE wallet_topup_requests
+          SET status = 'approved',
+              reviewed_at = NOW(),
+              reviewed_by = $2,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [requestId, request.user.id]
+      );
+
+      return {
+        status: "approved" as const,
+        walletBalance: (walletMutation.balanceAfterPaise / 100).toFixed(2)
+      };
+    });
+
+    if (!result) {
+      return reply.code(404).send({ message: "Wallet request not found" });
+    }
+
+    if (result.status === "already-reviewed") {
+      return reply.code(409).send({ message: "Wallet request was already reviewed" });
+    }
+
+    return {
+      success: true,
+      wallet_balance: result.walletBalance
+    };
+  });
+
+  app.post("/admin/wallet-requests/:id/reject", { preHandler: requireAdmin }, async (request, reply) => {
+    const requestId = String((request.params as { id: string }).id);
+
+    const result = await withTransaction(async (client) => {
+      const requestResult = await client.query<{
+        id: string;
+        status: "pending" | "approved" | "rejected";
+      }>(
+        `
+          SELECT id, status
+          FROM wallet_topup_requests
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [requestId]
+      );
+
+      if (requestResult.rowCount !== 1) {
+        return null;
+      }
+
+      const walletRequest = requestResult.rows[0];
+
+      if (walletRequest.status !== "pending") {
+        return { status: "already-reviewed" as const };
+      }
+
+      await client.query(
+        `
+          UPDATE wallet_topup_requests
+          SET status = 'rejected',
+              reviewed_at = NOW(),
+              reviewed_by = $2,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [requestId, request.user.id]
+      );
+
+      return { status: "rejected" as const };
+    });
+
+    if (!result) {
+      return reply.code(404).send({ message: "Wallet request not found" });
+    }
+
+    if (result.status === "already-reviewed") {
+      return reply.code(409).send({ message: "Wallet request was already reviewed" });
+    }
+
+    return { success: true };
+  });
+
   app.post("/admin/users/:id/wallet/credit", { preHandler: requireAdmin }, async (request) => {
     const userId = String((request.params as { id: string }).id);
     const body = amountSchema.parse(request.body);
@@ -202,9 +360,10 @@ export async function adminRoutes(app: FastifyInstance) {
         userId,
         amountPaise: Math.round(body.amount * 100),
         type: "credit",
-        reason: "topup",
+        reason: "manual_topup",
         metadata: {
-          creditedByAdminId: request.user.id
+          creditedByAdminId: request.user.id,
+          source: "admin_wallet_credit"
         }
       })
     );

@@ -1,7 +1,7 @@
 import { pool } from "@quiz-app/db";
 
 const demoUsers = [
-  { email: "admin.quiz@gmail.com", name: "Quiz Admin", is_admin: true, balance: "500.00" },
+  { email: "padmavathi.kilari@fissionlabs.com", name: "Quiz Admin", is_admin: true, balance: "500.00" },
   { email: "player.one@gmail.com", name: "Player One", is_admin: false, balance: "100.00" },
   { email: "player.two@gmail.com", name: "Player Two", is_admin: false, balance: "100.00" }
 ];

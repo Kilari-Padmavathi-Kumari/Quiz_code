@@ -1,4 +1,4 @@
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 
 import { withTransaction } from "@quiz-app/db";
 import type { FastifyInstance } from "fastify";
@@ -46,11 +46,16 @@ const emailLoginSchema = z.object({
 });
 
 const authCodeKey = (email: string) => `auth:code:${email}`;
+const authStateKey = (state: string) => `auth:google:state:${state}`;
 
 type AuthCodePayload = {
   code: string;
   name?: string;
   avatar_url?: string;
+};
+
+type GoogleOauthStatePayload = {
+  redirect_to: string;
 };
 
 function makeDevProviderUid(email: string) {
@@ -113,7 +118,30 @@ async function resolveUserFromOauth({
     );
 
     const user =
-      existingUser.rows[0] ??
+      existingUser.rows[0]
+        ? (
+            await client.query<{
+              id: string;
+              email: string;
+              name: string;
+              avatar_url: string | null;
+              wallet_balance: string;
+              is_admin: boolean;
+              is_banned: boolean;
+            }>(
+              `
+                UPDATE users
+                SET name = $2,
+                    avatar_url = $3,
+                    is_admin = $4,
+                    updated_at = NOW()
+                WHERE id = $1
+                RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
+              `,
+              [existingUser.rows[0].id, name, avatarUrl ?? existingUser.rows[0].avatar_url, email === config.adminEmail]
+            )
+          ).rows[0]
+        :
       (
         await client.query<{
           id: string;
@@ -125,8 +153,8 @@ async function resolveUserFromOauth({
           is_banned: boolean;
         }>(
           `
-            INSERT INTO users (email, name, avatar_url, is_admin)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO users (email, name, avatar_url, is_admin, wallet_balance)
+            VALUES ($1, $2, $3, $4, '100.00')
             RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
           `,
           [email, name, avatarUrl ?? null, email === config.adminEmail]
@@ -180,7 +208,7 @@ async function issueSessionForUser(user: {
 }
 
 async function verifyGoogleIdToken(idToken: string) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = config.googleClientId;
   const jwksUrl = process.env.GOOGLE_JWKS_URL ?? "https://www.googleapis.com/oauth2/v3/certs";
 
   if (!clientId) {
@@ -208,7 +236,150 @@ async function verifyGoogleIdToken(idToken: string) {
   };
 }
 
+function resolveFrontendRedirect(target?: string) {
+  if (!target) {
+    return `${config.frontendUrl}/dashboard`;
+  }
+
+  if (target.startsWith("/")) {
+    return `${config.frontendUrl}${target}`;
+  }
+
+  try {
+    const targetUrl = new URL(target);
+    const frontendUrl = new URL(config.frontendUrl);
+
+    if (targetUrl.origin !== frontendUrl.origin) {
+      return `${config.frontendUrl}/dashboard`;
+    }
+
+    return targetUrl.toString();
+  } catch {
+    return `${config.frontendUrl}/dashboard`;
+  }
+}
+
+function buildFrontendAuthCallbackUrl(accessToken: string, redirectTo: string) {
+  const callbackUrl = new URL("/auth/callback", config.frontendUrl);
+  callbackUrl.searchParams.set("access_token", accessToken);
+  callbackUrl.searchParams.set("next", redirectTo);
+  return callbackUrl.toString();
+}
+
+function buildFrontendErrorUrl(message: string) {
+  const errorUrl = new URL("/", config.frontendUrl);
+  errorUrl.searchParams.set("error", message);
+  return errorUrl.toString();
+}
+
+async function exchangeGoogleAuthorizationCode(code: string) {
+  if (!config.googleClientId || !config.googleClientSecret) {
+    throw new Error("Google OAuth client credentials are not configured");
+  }
+
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      code,
+      client_id: config.googleClientId,
+      client_secret: config.googleClientSecret,
+      redirect_uri: config.googleRedirectUri,
+      grant_type: "authorization_code"
+    })
+  });
+
+  if (!tokenResponse.ok) {
+    const body = await tokenResponse.text();
+    throw new Error(`Google token exchange failed: ${body}`);
+  }
+
+  const tokenBody = (await tokenResponse.json()) as {
+    id_token?: string;
+  };
+
+  if (!tokenBody.id_token) {
+    throw new Error("Google token response did not include an id_token");
+  }
+
+  return verifyGoogleIdToken(tokenBody.id_token);
+}
+
 export async function authRoutes(app: FastifyInstance) {
+  app.get("/auth/google", async (request, reply) => {
+    if (!config.googleClientId || !config.googleClientSecret) {
+      return reply.redirect(buildFrontendErrorUrl("Google OAuth is not configured on the server."));
+    }
+
+    const state = randomBytes(24).toString("hex");
+    const redirectTo = resolveFrontendRedirect(String((request.query as { redirect_to?: string }).redirect_to ?? ""));
+
+    await redis.setex(
+      authStateKey(state),
+      config.authCodeTtlMinutes * 60,
+      JSON.stringify({ redirect_to: redirectTo } satisfies GoogleOauthStatePayload)
+    );
+
+    const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    googleUrl.searchParams.set("client_id", config.googleClientId);
+    googleUrl.searchParams.set("redirect_uri", config.googleRedirectUri);
+    googleUrl.searchParams.set("response_type", "code");
+    googleUrl.searchParams.set("scope", "openid email profile");
+    googleUrl.searchParams.set("state", state);
+    googleUrl.searchParams.set("access_type", "offline");
+    googleUrl.searchParams.set("prompt", "consent");
+
+    return reply.redirect(googleUrl.toString());
+  });
+
+  app.get("/auth/google/callback", async (request, reply) => {
+    const { code, state, error } = request.query as {
+      code?: string;
+      state?: string;
+      error?: string;
+    };
+
+    if (error) {
+      return reply.redirect(buildFrontendErrorUrl(`Google login failed: ${error}`));
+    }
+
+    if (!code || !state) {
+      return reply.redirect(buildFrontendErrorUrl("Missing Google OAuth code or state."));
+    }
+
+    const rawState = await redis.get(authStateKey(state));
+    if (!rawState) {
+      return reply.redirect(buildFrontendErrorUrl("Google OAuth state is invalid or expired."));
+    }
+
+    await redis.del(authStateKey(state));
+    const parsedState = JSON.parse(rawState) as GoogleOauthStatePayload;
+
+    try {
+      const profile = await exchangeGoogleAuthorizationCode(code);
+      const user = await resolveUserFromOauth({
+        provider: "google",
+        providerUid: profile.providerUid,
+        email: profile.email,
+        name: profile.name,
+        avatarUrl: profile.avatarUrl
+      });
+
+      const sessionResult = await issueSessionForUser(user);
+
+      if (sessionResult.status !== 200) {
+        return reply.code(sessionResult.status).send(sessionResult.body);
+      }
+
+      setRefreshCookie(reply, sessionResult.session.refreshToken);
+      return reply.redirect(buildFrontendAuthCallbackUrl(sessionResult.session.accessToken, parsedState.redirect_to));
+    } catch (oauthError) {
+      return reply.redirect(buildFrontendErrorUrl(oauthError instanceof Error ? oauthError.message : "Google OAuth failed"));
+    }
+  });
+
   app.post("/auth/email-login", async (request, reply) => {
     const body = emailLoginSchema.parse(request.body);
     const email = body.email.trim().toLowerCase();
