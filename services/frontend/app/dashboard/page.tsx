@@ -78,8 +78,51 @@ function getPrizeRuleLabel(prizeRule: PrizeRule) {
 
 function getPrizeRuleDescription(prizeRule: PrizeRule) {
   return prizeRule === "all_correct"
-    ? "Only players with full marks win this contest."
+    ? "Full marks win the contest. If nobody is perfect, the top scorer wins."
     : "The highest correct score wins; ties split the prize.";
+}
+
+function getStatusPillClass(status: string) {
+  if (status === "live") {
+    return "pill pill--live";
+  }
+
+  if (status === "open") {
+    return "pill pill--open";
+  }
+
+  if (status === "draft") {
+    return "pill pill--draft";
+  }
+
+  if (status === "ended") {
+    return "pill pill--ended";
+  }
+
+  if (status === "cancelled") {
+    return "pill pill--cancelled";
+  }
+
+  return "pill";
+}
+
+function formatContestTiming(contest: ContestItem | ContestHistoryItem) {
+  const startsAt = new Date(contest.starts_at);
+  const diffMinutes = Math.round((startsAt.getTime() - Date.now()) / 60000);
+
+  if (contest.status === "live") {
+    return "Live right now";
+  }
+
+  if (contest.status !== "ended" && contest.status !== "cancelled" && diffMinutes > 0 && diffMinutes < 60) {
+    return `Starts in ${diffMinutes} min`;
+  }
+
+  if (contest.status !== "ended" && contest.status !== "cancelled" && diffMinutes >= 60 && diffMinutes < 1440) {
+    return `Starts in ${Math.round(diffMinutes / 60)} hr`;
+  }
+
+  return `${contest.status === "ended" || contest.status === "cancelled" ? "Started" : "Starts"} ${startsAt.toLocaleString()}`;
 }
 
 function formatTransactionReason(transaction: WalletTransactionItem) {
@@ -274,31 +317,25 @@ export default function DashboardPage() {
   return (
     <SiteShell
       title="Player Dashboard"
-      subtitle="Request wallet credit, join a live contest, and jump into the real-time game room."
+      subtitle="Track your wallet, join live rounds, and follow results from one clean player view."
     >
       <div className="grid three">
-        <div className="stat-card">
+        <div className="stat-card stat-card--wallet">
           <div className="eyebrow">Wallet</div>
           <div className="stat-value">Rs {walletBalance}</div>
-          <p className="muted">
-            Wallet balance updates after an admin approves your credit request.
-          </p>
+          <p className="muted">Balance updates after approved requests and contest activity.</p>
         </div>
 
-        <div className="stat-card">
+        <div className="stat-card stat-card--performance">
           <div className="eyebrow">Performance</div>
           <div className="stat-value">{totalWins}/{totalContestAttempts}</div>
-          <p className="muted">
-            Contest wins and total attempts from your joined contest history.
-          </p>
+          <p className="muted">Wins versus total completed contest attempts.</p>
         </div>
 
-        <div className="stat-card">
+        <div className="stat-card stat-card--prize">
           <div className="eyebrow">Prize Credits</div>
           <div className="stat-value">Rs {totalPrizeWon}</div>
-          <p className="muted">
-            Total prize money credited back to this wallet across completed contests.
-          </p>
+          <p className="muted">Total prize money credited back to this wallet.</p>
         </div>
       </div>
 
@@ -404,18 +441,10 @@ export default function DashboardPage() {
         <div className="card">
           <div className="eyebrow">Dashboard Guide</div>
           <div className="list" style={{ marginTop: 14 }}>
-            <div className="notice">
-              Send a wallet request first, then wait for admin approval before the balance appears in your account.
-            </div>
-            <div className="notice">
-              Join a contest from the list below and the entry fee will appear in wallet history as a debit.
-            </div>
-            <div className="notice">
-              When a contest ends, winnings appear in wallet history as a credit and the contest moves to Contest History.
-            </div>
-            <div className="notice">
-              Use the leaderboard button in Contest History to check who won after the contest finishes.
-            </div>
+            <div className="notice">Send a wallet request and wait for approval before joining paid contests.</div>
+            <div className="notice">Contest entry fees appear in the ledger as debits right after you join.</div>
+            <div className="notice">Finished contests move into history with results, correct count, and prize info.</div>
+            <div className="notice">Open the leaderboard from history to review the final rankings.</div>
           </div>
         </div>
       </div>
@@ -425,23 +454,23 @@ export default function DashboardPage() {
 
       {isLoadingData ? (
         <div className="loading-grid" style={{ marginTop: 22 }}>
-          <div className="loading-card" />
-          <div className="loading-card" />
-          <div className="loading-card" />
+          <div className="loading-card loading-card--panel" />
+          <div className="loading-card loading-card--panel" />
+          <div className="loading-card loading-card--panel" />
         </div>
       ) : null}
 
       <section style={{ marginTop: 22 }}>
-        <div className="hero-actions" style={{ justifyContent: "space-between" }}>
-          <div>
-            <div className="eyebrow">Request Status</div>
-            <h2 className="section-title">Wallet requests</h2>
-          </div>
+        <div className="section-heading">
+          <div className="eyebrow">Request Status</div>
+          <h2 className="section-title">Wallet requests</h2>
+          <p className="section-heading__copy">Track pending, approved, and rejected wallet requests without leaving the dashboard.</p>
         </div>
 
         <div className="list">
           {walletRequests.length === 0 ? (
-            <div className="empty-state">
+            <div className="empty-state empty-state--wallet">
+              <div className="empty-state__eyebrow">Request Queue</div>
               <strong>No wallet requests yet</strong>
               <p>Send a request above and admin approval updates will appear here.</p>
             </div>
@@ -464,10 +493,10 @@ export default function DashboardPage() {
                   <span
                     className={
                       request.status === "approved"
-                        ? "pill gold"
+                        ? "pill pill--ended"
                         : request.status === "rejected"
-                          ? "pill rose"
-                          : "pill"
+                          ? "pill pill--cancelled"
+                          : "pill pill--open"
                     }
                   >
                     {request.status}
@@ -480,16 +509,16 @@ export default function DashboardPage() {
       </section>
 
       <section style={{ marginTop: 22 }}>
-        <div className="hero-actions" style={{ justifyContent: "space-between" }}>
-          <div>
-            <div className="eyebrow">Payment History</div>
-            <h2 className="section-title">Wallet ledger</h2>
-          </div>
+        <div className="section-heading">
+          <div className="eyebrow">Payment History</div>
+          <h2 className="section-title">Wallet ledger</h2>
+          <p className="section-heading__copy">A clear trail of contest debits, prizes, refunds, and manual credits.</p>
         </div>
 
         <div className="list">
           {transactions.length === 0 ? (
-            <div className="empty-state">
+            <div className="empty-state empty-state--wallet">
+              <div className="empty-state__eyebrow">Wallet Story</div>
               <strong>No wallet activity yet</strong>
               <p>
                 After this user adds money, joins a contest, gets a refund, or wins a prize, the ledger will show the
@@ -528,16 +557,16 @@ export default function DashboardPage() {
       </section>
 
       <section style={{ marginTop: 22 }}>
-        <div className="hero-actions" style={{ justifyContent: "space-between" }}>
-          <div>
-            <div className="eyebrow">Contest History</div>
-            <h2 className="section-title">Attempts, results, and winners</h2>
-          </div>
+        <div className="section-heading">
+          <div className="eyebrow">Contest History</div>
+          <h2 className="section-title">Attempts, results, and winners</h2>
+          <p className="section-heading__copy">See how each completed round performed and jump to the final leaderboard when needed.</p>
         </div>
 
         <div className="list">
           {contestHistory.length === 0 ? (
-            <div className="empty-state">
+            <div className="empty-state empty-state--history">
+              <div className="empty-state__eyebrow">Contest Journey</div>
               <strong>No contest history yet</strong>
               <p>This section fills in after the current user joins and completes at least one contest.</p>
             </div>
@@ -549,7 +578,7 @@ export default function DashboardPage() {
                 <div>
                   <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
                   <div className="contest-meta">
-                    <span className="pill">{contest.status}</span>
+                    <span className={getStatusPillClass(contest.status)}>{contest.status}</span>
                     <span className="pill">{getPrizeRuleLabel(contest.prize_rule)}</span>
                     <span className="pill gold">Entry Rs {contest.entry_fee}</span>
                     <span className="pill">{contest.correct_count} correct</span>
@@ -575,7 +604,7 @@ export default function DashboardPage() {
                 {getPrizeRuleDescription(contest.prize_rule)}
               </p>
               <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>
-                Joined {new Date(contest.joined_at).toLocaleString()} | Starts {new Date(contest.starts_at).toLocaleString()}
+                Joined {new Date(contest.joined_at).toLocaleString()} | {formatContestTiming(contest)}
               </p>
               <div className="mono" style={{ marginTop: 10, fontSize: "0.84rem" }}>
                 {contest.contest_id} | {contest.member_count}/{contest.max_members} players | Prize pool Rs {contest.prize_pool}
@@ -586,11 +615,10 @@ export default function DashboardPage() {
       </section>
 
       <section style={{ marginTop: 22 }}>
-        <div className="hero-actions" style={{ justifyContent: "space-between" }}>
-          <div>
-            <div className="eyebrow">{tabMeta[contestTab].eyebrow}</div>
-            <h2 className="section-title">{tabMeta[contestTab].title}</h2>
-          </div>
+        <div className="section-heading">
+          <div className="eyebrow">{tabMeta[contestTab].eyebrow}</div>
+          <h2 className="section-title">{tabMeta[contestTab].title}</h2>
+          <p className="section-heading__copy">Switch views quickly with clearer status color-coding and timing cues.</p>
         </div>
 
         <div className="tab-row" style={{ marginTop: 14, marginBottom: 18 }}>
@@ -616,6 +644,7 @@ export default function DashboardPage() {
         <div className="list">
           {visibleContests.length === 0 ? (
             <div className="empty-state">
+              <div className="empty-state__eyebrow">Contest View</div>
               <strong>{tabMeta[contestTab].title}</strong>
               <p>{tabMeta[contestTab].empty}</p>
             </div>
@@ -627,7 +656,7 @@ export default function DashboardPage() {
                 <div>
                   <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
                   <div className="contest-meta">
-                    <span className="pill">{contest.status}</span>
+                    <span className={getStatusPillClass(contest.status)}>{contest.status}</span>
                     <span className="pill">{getPrizeRuleLabel(contest.prize_rule)}</span>
                     <span className="pill gold">Entry Rs {contest.entry_fee}</span>
                     <span className="pill">{contest.member_count}/{contest.max_members} joined</span>
@@ -703,8 +732,7 @@ export default function DashboardPage() {
                 {getPrizeRuleDescription(contest.prize_rule)}
               </p>
               <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>
-                {contest.status === "ended" || contest.status === "cancelled" ? "Started" : "Starts"} at{" "}
-                {new Date(contest.starts_at).toLocaleString()}
+                {formatContestTiming(contest)}
               </p>
               <div className="mono" style={{ marginTop: 10, fontSize: "0.84rem" }}>
                 {contest.id}

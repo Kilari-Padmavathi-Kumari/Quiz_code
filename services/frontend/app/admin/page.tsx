@@ -62,6 +62,30 @@ interface WalletTopupRequestItem {
   user_email: string;
 }
 
+function getStatusPillClass(status: string) {
+  if (status === "live") {
+    return "pill pill--live";
+  }
+
+  if (status === "open" || status === "pending") {
+    return "pill pill--open";
+  }
+
+  if (status === "draft") {
+    return "pill pill--draft";
+  }
+
+  if (status === "ended" || status === "approved" || status === "completed") {
+    return "pill pill--ended";
+  }
+
+  if (status === "cancelled" || status === "rejected" || status === "failed") {
+    return "pill pill--cancelled";
+  }
+
+  return "pill";
+}
+
 export default function AdminPage() {
   const { session, isReady } = useFrontendSession();
   const [contests, setContests] = useState<AdminContest[]>([]);
@@ -170,7 +194,7 @@ export default function AdminPage() {
   return (
     <SiteShell
       title="Admin Console"
-      subtitle="Create draft contests, attach questions, publish schedules, and watch queue state without touching the backend code directly."
+      subtitle="Create contests, stage questions, monitor jobs, and manage wallet operations from one cleaner control room."
     >
       <section className="admin-hero">
         <div className="admin-hero__content">
@@ -209,8 +233,8 @@ export default function AdminPage() {
       {error ? <div className="notice error" style={{ marginTop: 14 }}>{error}</div> : null}
       {isLoadingData ? (
         <div className="loading-grid" style={{ marginTop: 20 }}>
-          <div className="loading-card" />
-          <div className="loading-card" />
+          <div className="loading-card loading-card--panel" />
+          <div className="loading-card loading-card--panel" />
         </div>
       ) : null}
 
@@ -259,8 +283,8 @@ export default function AdminPage() {
                 }))
               }
             >
-              <option value="all_correct">all_correct</option>
-              <option value="top_scorer">top_scorer</option>
+              <option value="all_correct">All Correct with top-scorer fallback</option>
+              <option value="top_scorer">Top Scorer</option>
             </select>
           </label>
           <button
@@ -467,7 +491,8 @@ export default function AdminPage() {
           <div className="eyebrow">Contest Monitor</div>
           <div className="list" style={{ marginTop: 16 }}>
             {contests.length === 0 ? (
-              <div className="empty-state">
+              <div className="empty-state empty-state--history">
+                <div className="empty-state__eyebrow">Contest Control</div>
                 <strong>No contests yet</strong>
                 <p>Create a contest above and it will appear here for recovery, publishing, and result tracking.</p>
               </div>
@@ -478,7 +503,7 @@ export default function AdminPage() {
                   <div>
                     <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
                     <div className="pill-row">
-                      <span className="pill">{contest.status}</span>
+                      <span className={getStatusPillClass(contest.status)}>{contest.status}</span>
                       <span className="pill gold">Prize Rs {contest.prize_pool}</span>
                       <span className="pill rose">{contest.member_count} joined</span>
                     </div>
@@ -546,6 +571,7 @@ export default function AdminPage() {
           <div className="list" style={{ marginTop: 16 }}>
             {jobs.length === 0 ? (
               <div className="empty-state">
+                <div className="empty-state__eyebrow">Queue Watch</div>
                 <strong>No queued jobs right now</strong>
                 <p>Once contests are published or retried, queue activity and failures will show up here.</p>
               </div>
@@ -555,7 +581,7 @@ export default function AdminPage() {
                 <div className="pill-row" style={{ marginBottom: 10 }}>
                   <span className="pill">{job.queue}</span>
                   <span className="pill gold">{job.job_name}</span>
-                  <span className="pill rose">{job.status}</span>
+                  <span className={getStatusPillClass(job.status)}>{job.status}</span>
                 </div>
                 <div className="mono" style={{ marginBottom: 8 }}>
                   {job.job_id}
@@ -603,7 +629,8 @@ export default function AdminPage() {
           <div className="eyebrow">Wallet Requests</div>
           <div className="list" style={{ marginTop: 16 }}>
             {walletRequests.length === 0 ? (
-              <div className="empty-state">
+              <div className="empty-state empty-state--wallet">
+                <div className="empty-state__eyebrow">Wallet Ops</div>
                 <strong>No wallet requests</strong>
                 <p>User payment requests will appear here and can be approved from this panel.</p>
               </div>
@@ -709,6 +736,7 @@ export default function AdminPage() {
           <div className="list" style={{ marginTop: 16 }}>
             {users.length === 0 ? (
               <div className="empty-state">
+                <div className="empty-state__eyebrow">Accounts</div>
                 <strong>No users found</strong>
                 <p>Player and admin accounts will appear here after they sign in.</p>
               </div>

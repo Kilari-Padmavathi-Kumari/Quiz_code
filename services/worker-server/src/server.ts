@@ -416,7 +416,7 @@ async function endContest(contestId: string) {
     (row) => Number(row.correct_count) === totalQuestions && totalQuestions > 0
   );
 
-  if (contestResult.rows[0].prize_rule === "top_scorer") {
+  if (contestResult.rows[0].prize_rule === "top_scorer" || winners.length === 0) {
     const topScore = Math.max(...leaderboardResult.rows.map((row) => Number(row.correct_count)), 0);
     winners = leaderboardResult.rows.filter((row) => Number(row.correct_count) === topScore);
   }
