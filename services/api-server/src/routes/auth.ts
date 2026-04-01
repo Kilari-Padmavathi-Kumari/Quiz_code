@@ -62,6 +62,42 @@ function makeDevProviderUid(email: string) {
   return `dev_${createHash("sha256").update(email).digest("hex")}`;
 }
 
+function buildFallbackAvatarUrl(name: string, email: string) {
+  const seed = name.trim() || email.trim() || "Quiz Player";
+  const url = new URL("https://ui-avatars.com/api/");
+  url.searchParams.set("name", seed);
+  url.searchParams.set("background", "0F4C81");
+  url.searchParams.set("color", "FFFFFF");
+  url.searchParams.set("bold", "true");
+  url.searchParams.set("format", "png");
+  url.searchParams.set("size", "256");
+  return url.toString();
+}
+
+function resolveAvatarUrl({
+  avatarUrl,
+  existingAvatarUrl,
+  name,
+  email
+}: {
+  avatarUrl?: string | null;
+  existingAvatarUrl?: string | null;
+  name: string;
+  email: string;
+}) {
+  const trimmedAvatarUrl = avatarUrl?.trim();
+
+  if (trimmedAvatarUrl) {
+    return trimmedAvatarUrl;
+  }
+
+  if (existingAvatarUrl?.trim()) {
+    return existingAvatarUrl.trim();
+  }
+
+  return buildFallbackAvatarUrl(name, email);
+}
+
 async function resolveUserFromOauth({
   provider,
   providerUid,
@@ -96,7 +132,36 @@ async function resolveUserFromOauth({
     );
 
     if (oauthResult.rowCount === 1) {
-      return oauthResult.rows[0];
+      const existingOauthUser = oauthResult.rows[0];
+      const resolvedAvatarUrl = resolveAvatarUrl({
+        avatarUrl,
+        existingAvatarUrl: existingOauthUser.avatar_url,
+        name,
+        email
+      });
+
+      return (
+        await client.query<{
+          id: string;
+          email: string;
+          name: string;
+          avatar_url: string | null;
+          wallet_balance: string;
+          is_admin: boolean;
+          is_banned: boolean;
+        }>(
+          `
+            UPDATE users
+            SET name = $2,
+                avatar_url = $3,
+                is_admin = $4,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
+          `,
+          [existingOauthUser.id, name, resolvedAvatarUrl, email === config.adminEmail]
+        )
+      ).rows[0];
     }
 
     const existingUser = await client.query<{
@@ -138,7 +203,17 @@ async function resolveUserFromOauth({
                 WHERE id = $1
                 RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
               `,
-              [existingUser.rows[0].id, name, avatarUrl ?? existingUser.rows[0].avatar_url, email === config.adminEmail]
+              [
+                existingUser.rows[0].id,
+                name,
+                resolveAvatarUrl({
+                  avatarUrl,
+                  existingAvatarUrl: existingUser.rows[0].avatar_url,
+                  name,
+                  email
+                }),
+                email === config.adminEmail
+              ]
             )
           ).rows[0]
         :
@@ -157,7 +232,16 @@ async function resolveUserFromOauth({
             VALUES ($1, $2, $3, $4, '100.00')
             RETURNING id, email, name, avatar_url, wallet_balance, is_admin, is_banned
           `,
-          [email, name, avatarUrl ?? null, email === config.adminEmail]
+          [
+            email,
+            name,
+            resolveAvatarUrl({
+              avatarUrl,
+              name,
+              email
+            }),
+            email === config.adminEmail
+          ]
         )
       ).rows[0];
 

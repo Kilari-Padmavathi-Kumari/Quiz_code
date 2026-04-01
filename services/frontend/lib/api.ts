@@ -420,6 +420,7 @@ export function getAdminUsers(accessToken: string) {
       id: string;
       email: string;
       name: string;
+      avatar_url: string | null;
       wallet_balance: string;
       is_admin: boolean;
       is_banned: boolean;

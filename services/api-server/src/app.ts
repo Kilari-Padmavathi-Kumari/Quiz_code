@@ -2,6 +2,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { ZodError } from "zod";
+import { pool } from "@quiz-app/db";
 
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
@@ -32,10 +33,33 @@ export async function buildApp() {
   });
   await app.register(cookie);
 
-  app.get("/health", async () => ({
-    ok: true,
-    service: "api-server"
-  }));
+  app.get("/health", async (_request, reply) => {
+    const checks = {
+      db: false,
+      redis: false
+    };
+
+    try {
+      await pool.query("SELECT 1");
+      checks.db = true;
+    } catch {
+      checks.db = false;
+    }
+
+    try {
+      checks.redis = (await redis.ping()) === "PONG";
+    } catch {
+      checks.redis = false;
+    }
+
+    const ok = checks.db && checks.redis;
+
+    return reply.code(ok ? 200 : 503).send({
+      ok,
+      service: "api-server",
+      checks
+    });
+  });
 
   await app.register(authRoutes);
   await app.register(walletRoutes);

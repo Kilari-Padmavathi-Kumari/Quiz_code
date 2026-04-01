@@ -30,7 +30,41 @@ process.on("uncaughtException", (error) => {
   console.error("[game-server] Uncaught exception", error);
 });
 
-const httpServer = createServer();
+const httpServer = createServer(async (req, res) => {
+  if (req.url !== "/health") {
+    res.statusCode = 404;
+    res.end("Not found");
+    return;
+  }
+
+  let db = false;
+  let redis = false;
+
+  try {
+    await pool.query("SELECT 1");
+    db = true;
+  } catch {
+    db = false;
+  }
+
+  try {
+    redis = (await runRedisWithRetry(() => commandRedis.ping())) === "PONG";
+  } catch {
+    redis = false;
+  }
+
+  const ok = db && redis;
+  res.statusCode = ok ? 200 : 503;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({
+    ok,
+    service: "game-server",
+    checks: {
+      db,
+      redis
+    }
+  }));
+});
 const io = new Server(httpServer, {
   cors: {
     origin: frontendUrl,

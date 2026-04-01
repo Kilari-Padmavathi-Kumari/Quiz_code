@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useEffect, useMemo, useState } from "react";
 
+import { Avatar } from "../../components/avatar";
 import { LoginCard } from "../../components/login-card";
 import { SiteShell } from "../../components/site-shell";
 import { useFrontendSession } from "../../components/session-panel";
@@ -15,7 +16,6 @@ import {
   getJobs,
   getWalletTopupRequests,
   publishContest,
-  rebuildContestCache,
   recoverContest,
   rejectWalletTopupRequest,
   retryJob
@@ -45,6 +45,7 @@ interface AdminUser {
   id: string;
   email: string;
   name: string;
+  avatar_url: string | null;
   wallet_balance: string;
   is_admin: boolean;
   is_banned: boolean;
@@ -203,25 +204,30 @@ export default function AdminPage() {
           <p className="muted">
             Draft contests, load questions, inspect queue pressure, and credit wallets from one page built to feel more like a modern live ops desk.
           </p>
+          <div className="admin-hero__pills">
+            <span className="pill pill--open">Queue aware</span>
+            <span className="pill pill--live">Live recovery</span>
+            <span className="pill pill--ended">Wallet approvals</span>
+          </div>
         </div>
 
         <div className="admin-hero__stats">
-          <div className="admin-stat-card">
+          <div className="admin-stat-card admin-stat-card--contest">
             <span className="eyebrow">Contests</span>
             <div className="stat-value">{contests.length}</div>
             <div className="muted">Total tracked contests</div>
           </div>
-          <div className="admin-stat-card">
+          <div className="admin-stat-card admin-stat-card--live">
             <span className="eyebrow">Active</span>
             <div className="stat-value">{activeContests}</div>
             <div className="muted">Open or live right now</div>
           </div>
-          <div className="admin-stat-card">
+          <div className="admin-stat-card admin-stat-card--jobs">
             <span className="eyebrow">Jobs</span>
             <div className="stat-value">{jobs.length}</div>
             <div className="muted">Queued or recoverable items</div>
           </div>
-          <div className="admin-stat-card">
+          <div className="admin-stat-card admin-stat-card--results">
             <span className="eyebrow">Results</span>
             <div className="stat-value">{endedContests}</div>
             <div className="muted">Completed contests</div>
@@ -239,8 +245,14 @@ export default function AdminPage() {
       ) : null}
 
       <div className="grid two" style={{ marginTop: 20 }}>
-        <div className="card card-luxe">
-          <div className="eyebrow">Create Contest</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Create Contest</div>
+              <h3 className="admin-panel__title">Contest setup</h3>
+              <p className="muted admin-panel__copy">Define the title, timing, entry fee, and prize behavior before publishing.</p>
+            </div>
+          </div>
           <label className="field">
             <span>Title</span>
             <input
@@ -287,6 +299,10 @@ export default function AdminPage() {
               <option value="top_scorer">Top Scorer</option>
             </select>
           </label>
+          <div className="admin-inline-note">
+            <span className="pill pill--draft">Draft first</span>
+            <span className="muted">Keep the contest in draft until questions are ready and the start time is in the future.</span>
+          </div>
           <button
             type="button"
             className="solid-button"
@@ -321,8 +337,21 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <div className="card card-luxe">
-          <div className="eyebrow">Add Question</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Add Question</div>
+              <h3 className="admin-panel__title">Question composer</h3>
+              <p className="muted admin-panel__copy">Load the round in sequence and publish only when the selected contest is fully ready.</p>
+            </div>
+            {selectedContest ? (
+              <div className="admin-selected-contest">
+                <span className={getStatusPillClass(selectedContest.status)}>{selectedContest.status}</span>
+                <strong>{selectedContest.title}</strong>
+                <span className="mono">{selectedContest.id}</span>
+              </div>
+            ) : null}
+          </div>
           <label className="field">
             <span>Contest</span>
             <select
@@ -487,8 +516,14 @@ export default function AdminPage() {
       </div>
 
       <div className="grid two" style={{ marginTop: 22 }}>
-        <div className="card card-luxe">
-          <div className="eyebrow">Contest Monitor</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Contest Monitor</div>
+              <h3 className="admin-panel__title">Live contest control</h3>
+              <p className="muted admin-panel__copy">Recover timelines, rebuild cache, and jump to finished results from one list.</p>
+            </div>
+          </div>
           <div className="list" style={{ marginTop: 16 }}>
             {contests.length === 0 ? (
               <div className="empty-state empty-state--history">
@@ -498,10 +533,13 @@ export default function AdminPage() {
               </div>
             ) : null}
             {contests.map((contest) => (
-              <div key={contest.id} className="contest-card contest-card--luxe">
-                <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <h3 style={{ margin: "0 0 8px" }}>{contest.title}</h3>
+              <div key={contest.id} className={`contest-card contest-card--luxe admin-monitor-card admin-monitor-card--${contest.status}`}>
+                <div className="contest-card__header">
+                  <div className="contest-card__titleblock">
+                    <div className="contest-card__timing">
+                      {contest.status === "live" ? "Live now" : new Date(contest.starts_at).toLocaleDateString()}
+                    </div>
+                    <h3 className="contest-card__title">{contest.title}</h3>
                     <div className="pill-row">
                       <span className={getStatusPillClass(contest.status)}>{contest.status}</span>
                       <span className="pill gold">Prize Rs {contest.prize_pool}</span>
@@ -509,56 +547,37 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => {
-                      setMessage(null);
-                      setError(null);
+                  <div className="contest-card__actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        setMessage(null);
+                        setError(null);
 
-                      startTransition(async () => {
-                        try {
-                          await recoverContest(session.accessToken, contest.id);
-                          setMessage(`Recovery triggered for ${contest.id}`);
-                          await loadAdminData(session.accessToken);
-                        } catch (recoverError) {
-                          setError(recoverError instanceof Error ? recoverError.message : "Recover failed");
-                        }
-                      });
-                    }}
-                  >
-                    Recover
-                  </button>
+                        startTransition(async () => {
+                          try {
+                            await recoverContest(session.accessToken, contest.id);
+                            setMessage(`Recovery triggered for ${contest.id}`);
+                            await loadAdminData(session.accessToken);
+                          } catch (recoverError) {
+                            setError(recoverError instanceof Error ? recoverError.message : "Recover failed");
+                          }
+                        });
+                      }}
+                    >
+                      Recover
+                    </button>
 
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => {
-                      setMessage(null);
-                      setError(null);
-
-                      startTransition(async () => {
-                        try {
-                          await rebuildContestCache(session.accessToken, contest.id);
-                          setMessage(`Rebuilt cache for ${contest.id}`);
-                          await loadAdminData(session.accessToken);
-                        } catch (rebuildError) {
-                          setError(rebuildError instanceof Error ? rebuildError.message : "Cache rebuild failed");
-                        }
-                      });
-                    }}
-                  >
-                    Rebuild Cache
-                  </button>
-
-                  {contest.status === "ended" ? (
-                    <Link href={`/contests/${contest.id}/leaderboard`} className="solid-button">
-                      View Result
-                    </Link>
-                  ) : null}
+                    {contest.status === "ended" ? (
+                      <Link href={`/contests/${contest.id}/leaderboard`} className="solid-button">
+                        View Result
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
 
-                <p className="muted" style={{ marginBottom: 0 }}>
+                <p className="muted contest-card__subcopy">
                   Starts at {new Date(contest.starts_at).toLocaleString()}
                 </p>
               </div>
@@ -566,8 +585,14 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="card card-luxe">
-          <div className="eyebrow">Job Monitor</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Job Monitor</div>
+              <h3 className="admin-panel__title">Queue pressure and retries</h3>
+              <p className="muted admin-panel__copy">Watch delayed, active, and failed jobs without leaving the console.</p>
+            </div>
+          </div>
           <div className="list" style={{ marginTop: 16 }}>
             {jobs.length === 0 ? (
               <div className="empty-state">
@@ -577,18 +602,20 @@ export default function AdminPage() {
               </div>
             ) : null}
             {jobs.map((job) => (
-              <div key={job.job_id} className="notice notice-luxe">
+              <div key={job.job_id} className="notice notice-luxe admin-job-card">
                 <div className="pill-row" style={{ marginBottom: 10 }}>
                   <span className="pill">{job.queue}</span>
                   <span className="pill gold">{job.job_name}</span>
                   <span className={getStatusPillClass(job.status)}>{job.status}</span>
                 </div>
-                <div className="mono" style={{ marginBottom: 8 }}>
-                  {job.job_id}
+                <div className="admin-job-card__topline">
+                  <div className="mono admin-job-card__id">
+                    {job.job_id}
+                  </div>
+                  <span className="pill">{job.attempts ?? 0} attempts</span>
                 </div>
                 <div className="muted">Scheduled for {new Date(job.scheduled_for).toLocaleString()}</div>
-                <div className="muted">Attempts made: {job.attempts ?? 0}</div>
-                <div className="mono" style={{ marginTop: 8, fontSize: "0.86rem" }}>
+                <div className="mono admin-job-card__payload">
                   {JSON.stringify(job.data ?? {})}
                 </div>
                 {job.failed_reason ? (
@@ -625,8 +652,14 @@ export default function AdminPage() {
       </div>
 
       <div className="grid two" style={{ marginTop: 22 }}>
-        <div className="card card-luxe">
-          <div className="eyebrow">Wallet Requests</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Wallet Requests</div>
+              <h3 className="admin-panel__title">Approval queue</h3>
+              <p className="muted admin-panel__copy">Review player top-up requests with clearer ownership, timing, and status.</p>
+            </div>
+          </div>
           <div className="list" style={{ marginTop: 16 }}>
             {walletRequests.length === 0 ? (
               <div className="empty-state empty-state--wallet">
@@ -636,9 +669,9 @@ export default function AdminPage() {
               </div>
             ) : null}
             {walletRequests.map((walletRequest) => (
-              <div key={walletRequest.id} className="notice notice-luxe">
+              <div key={walletRequest.id} className="notice notice-luxe wallet-request-card">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
+                  <div className="wallet-request-card__main">
                     <strong>{walletRequest.user_name}</strong>
                     <div className="muted">{walletRequest.user_email}</div>
                     <div className="muted">Requested Rs {walletRequest.amount}</div>
@@ -647,15 +680,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="pill-row">
-                    <span
-                      className={
-                        walletRequest.status === "approved"
-                          ? "pill gold"
-                          : walletRequest.status === "rejected"
-                            ? "pill rose"
-                            : "pill"
-                      }
-                    >
+                    <span className={getStatusPillClass(walletRequest.status)}>
                       {walletRequest.status}
                     </span>
                     {walletRequest.status === "pending" ? (
@@ -731,8 +756,14 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="card card-luxe">
-          <div className="eyebrow">Users</div>
+        <div className="card card-luxe admin-panel">
+          <div className="admin-panel__header">
+            <div>
+              <div className="eyebrow">Users</div>
+              <h3 className="admin-panel__title">Signed-in accounts</h3>
+              <p className="muted admin-panel__copy">See who has joined the system, how much balance they hold, and which account is admin.</p>
+            </div>
+          </div>
           <div className="list" style={{ marginTop: 16 }}>
             {users.length === 0 ? (
               <div className="empty-state">
@@ -742,11 +773,19 @@ export default function AdminPage() {
               </div>
             ) : null}
             {users.map((user) => (
-              <div key={user.id} className="notice notice-luxe">
+              <div key={user.id} className="notice notice-luxe admin-user-card">
                 <div className="stack-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <strong>{user.name}</strong>
-                    <div className="muted">{user.email}</div>
+                  <div className="profile-chip">
+                    <Avatar
+                      name={user.name}
+                      src={user.avatar_url}
+                      className="profile-chip__avatar"
+                      imageClassName="profile-chip__avatar profile-chip__avatar--image"
+                    />
+                    <div className="profile-chip__copy">
+                      <strong>{user.name}</strong>
+                      <span className="muted">{user.email}</span>
+                    </div>
                   </div>
                   <div className="pill-row">
                     <span className="pill gold">Rs {user.wallet_balance}</span>

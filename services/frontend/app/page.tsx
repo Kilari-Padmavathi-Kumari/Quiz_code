@@ -77,7 +77,7 @@ export default async function HomePage({
         <div className="notice error" style={{ marginBottom: 18 }}>{resolvedSearchParams.error}</div>
       ) : null}
 
-      <section className="landing-hero">
+      <section className="landing-hero landing-hero--glass">
         <div className="landing-hero__content landing-fade-up">
           <div className="landing-kicker landing-fade-up landing-delay-1">Live Quiz Platform</div>
           <h2 className="landing-display">
@@ -205,7 +205,7 @@ export default async function HomePage({
         </div>
       </section>
 
-      <section className="landing-mobile-strip" style={{ marginTop: 28 }}>
+      <section className="landing-mobile-strip landing-mobile-strip--glass" style={{ marginTop: 28 }}>
         <div className="landing-mobile-strip__intro">
           <span className="chip">Phone Experience</span>
           <h3 className="section-title">A compact front page that reads fast on mobile</h3>
@@ -226,7 +226,7 @@ export default async function HomePage({
         </div>
       </section>
 
-      <section className="landing-feature-grid" style={{ marginTop: 28 }}>
+      <section className="landing-feature-grid landing-feature-grid--glass" style={{ marginTop: 28 }}>
         {featureCards.map((card) => (
           <article key={card.title} className="landing-feature-card landing-hover-card landing-fade-up landing-delay-3">
             <div className="eyebrow">{card.eyebrow}</div>
@@ -236,7 +236,7 @@ export default async function HomePage({
         ))}
       </section>
 
-      <section className="landing-showcase" style={{ marginTop: 28 }}>
+      <section className="landing-showcase landing-showcase--glass" style={{ marginTop: 28 }}>
         <div className="landing-showcase__intro">
           <span className="chip">Why It Feels Better</span>
           <h3 className="section-title">A stronger first screen for players, admins, and reviewers</h3>

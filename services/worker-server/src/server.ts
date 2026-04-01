@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+
 import {
   moneyToPaise,
   mutateWalletBalance,
@@ -36,6 +38,7 @@ process.on("uncaughtException", (error) => {
 const connection = {
   url: process.env.REDIS_URL ?? "redis://localhost:6379"
 };
+const workerPort = Number(process.env.WORKER_PORT ?? 4002);
 
 const redis = createRedisClient("worker-server");
 await redis.connect();
@@ -828,3 +831,43 @@ try {
   console.error("[worker-server] Failed during startup recovery", error);
   process.exit(1);
 }
+
+const healthServer = createServer(async (req, res) => {
+  if (req.url !== "/health") {
+    res.statusCode = 404;
+    res.end("Not found");
+    return;
+  }
+
+  let db = false;
+  let redisOk = false;
+
+  try {
+    await pool.query("SELECT 1");
+    db = true;
+  } catch {
+    db = false;
+  }
+
+  try {
+    redisOk = (await redis.ping()) === "PONG";
+  } catch {
+    redisOk = false;
+  }
+
+  const ok = db && redisOk;
+  res.statusCode = ok ? 200 : 503;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({
+    ok,
+    service: "worker-server",
+    checks: {
+      db,
+      redis: redisOk
+    }
+  }));
+});
+
+healthServer.listen(workerPort, "0.0.0.0", () => {
+  console.log(`[worker-server] Health server listening on ${workerPort}`);
+});

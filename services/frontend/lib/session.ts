@@ -2,6 +2,7 @@ export interface FrontendSession {
   accessToken: string;
   email: string;
   name: string;
+  avatarUrl?: string | null;
   userId: string;
   isAdmin: boolean;
   expiresAt: number | null;

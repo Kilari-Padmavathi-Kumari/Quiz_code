@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useEffect, useState } from "react";
 
+import { Avatar } from "../../components/avatar";
 import { LoginCard } from "../../components/login-card";
 import { SiteShell } from "../../components/site-shell";
 import { useFrontendSession } from "../../components/session-panel";
@@ -386,8 +387,18 @@ export default function DashboardPage() {
 
         <div className="card">
           <div className="eyebrow">Account</div>
-          <h3>{session.name}</h3>
-          <p className="muted mono">{session.email}</p>
+          <div className="profile-chip profile-chip--hero" style={{ marginTop: 14 }}>
+            <Avatar
+              name={session.name}
+              src={session.avatarUrl}
+              className="profile-chip__avatar"
+              imageClassName="profile-chip__avatar profile-chip__avatar--image"
+            />
+            <div className="profile-chip__copy">
+              <strong>{session.name}</strong>
+              <span className="muted mono">{session.email}</span>
+            </div>
+          </div>
           <p className="muted" style={{ marginTop: 12 }}>
             {session.isAdmin
               ? "This account can access both player and admin workflows."

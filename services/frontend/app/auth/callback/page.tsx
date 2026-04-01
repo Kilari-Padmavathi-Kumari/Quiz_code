@@ -52,6 +52,7 @@ export default function AuthCallbackPage() {
             id: string;
             email: string;
             name: string;
+            avatar_url: string | null;
             is_admin: boolean;
           };
         };
@@ -60,6 +61,7 @@ export default function AuthCallbackPage() {
           accessToken,
           email: body.user.email,
           name: body.user.name,
+          avatarUrl: body.user.avatar_url,
           userId: body.user.id,
           isAdmin: body.user.is_admin,
           expiresAt: getTokenExpiry(accessToken)

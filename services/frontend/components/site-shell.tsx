@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
 
+import { Avatar } from "./avatar";
 import { useFrontendSession } from "./session-panel";
 import { logout } from "../lib/api";
 import { clearStoredSession } from "../lib/session";
@@ -83,7 +84,18 @@ export function SiteShell({
               Dashboard
             </Link>
             {session ? (
-              <span className="status-pill">{session.name} | {session.email}</span>
+              <span className="status-pill status-pill--profile">
+                <Avatar
+                  name={session.name}
+                  src={session.avatarUrl}
+                  className="status-pill__avatar"
+                  imageClassName="status-pill__avatar status-pill__avatar--image"
+                />
+                <span className="status-pill__copy">
+                  <strong>{session.name}</strong>
+                  <span>{session.email}</span>
+                </span>
+              </span>
             ) : (
               <span className="status-pill status-pill--ghost">Guest Mode</span>
             )}

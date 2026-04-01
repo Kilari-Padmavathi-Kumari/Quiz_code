@@ -44,13 +44,14 @@ export async function adminRoutes(app: FastifyInstance) {
       id: string;
       email: string;
       name: string;
+      avatar_url: string | null;
       wallet_balance: string;
       is_admin: boolean;
       is_banned: boolean;
       created_at: string;
     }>(
       `
-        SELECT id, email, name, wallet_balance, is_admin, is_banned, created_at
+        SELECT id, email, name, avatar_url, wallet_balance, is_admin, is_banned, created_at
         FROM users
         ORDER BY created_at ASC
       `

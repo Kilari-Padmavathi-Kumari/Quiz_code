@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
 
+import { Avatar } from "../../../../components/avatar";
 import { useFrontendSession } from "../../../../components/session-panel";
 import { SiteShell } from "../../../../components/site-shell";
 import { getLeaderboard, type PrizeRule } from "../../../../lib/api";
@@ -14,15 +15,6 @@ interface LeaderboardRow {
   correct_count: string;
   is_winner: boolean;
   prize_amount: string;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 }
 
 function getPrizeRuleLabel(prizeRule: PrizeRule) {
@@ -122,54 +114,55 @@ export default function LeaderboardPage() {
           </div>
         ) : null}
 
-        {rows.map((row, index) => (
-          <div
-            key={row.user_id}
-            className={[
-              "leaderboard-row",
-              row.is_winner ? "leaderboard-row--winner" : "",
-              session?.userId === row.user_id ? "leaderboard-row--you" : "",
-              index === 0 ? "leaderboard-row--first" : "",
-              index === 1 ? "leaderboard-row--second" : "",
-              index === 2 ? "leaderboard-row--third" : ""
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <div className="leaderboard-row__shell">
-              <div className="leaderboard-row__main">
-                <div className="leaderboard-rankline">
+        {rows.map((row, index) => {
+          return (
+            <div
+              key={row.user_id}
+              className={[
+                "leaderboard-row",
+                row.is_winner ? "leaderboard-row--winner" : "",
+                session?.userId === row.user_id ? "leaderboard-row--you" : "",
+                index === 0 ? "leaderboard-row--first" : "",
+                index === 1 ? "leaderboard-row--second" : "",
+                index === 2 ? "leaderboard-row--third" : ""
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <div className="leaderboard-row__shell">
+                <div className="leaderboard-row__main">
+                  <div className="leaderboard-rankline">
                   <span className="leaderboard-rank" title={`Rank #${index + 1}`}>
                     {getRankDisplay(index + 1)}
                   </span>
-                  {row.avatar_url ? (
-                    <img className="leaderboard-avatar leaderboard-avatar--image" src={row.avatar_url} alt={row.name} />
-                  ) : (
-                    <div className="leaderboard-avatar" aria-hidden="true">
-                      {getInitials(row.name)}
-                    </div>
-                  )}
-                  <div className="leaderboard-player">
-                    <div className="leaderboard-player__heading">
-                      <h3 className="leaderboard-player__name">{row.name}</h3>
-                      {session?.userId === row.user_id ? <span className="leaderboard-chip leaderboard-chip--you">You</span> : null}
-                    </div>
-                    <div className="leaderboard-player__meta">
-                      <span className="leaderboard-chip">Correct {row.correct_count}</span>
-                      {row.is_winner ? <span className="leaderboard-chip leaderboard-chip--winner">Winner</span> : null}
-                      <span className="leaderboard-chip leaderboard-chip--prize">Prize Rs {row.prize_amount}</span>
+                    <Avatar
+                      name={row.name}
+                      src={row.avatar_url}
+                      className="leaderboard-avatar"
+                      imageClassName="leaderboard-avatar leaderboard-avatar--image"
+                    />
+                    <div className="leaderboard-player">
+                      <div className="leaderboard-player__heading">
+                        <h3 className="leaderboard-player__name">{row.name}</h3>
+                        {session?.userId === row.user_id ? <span className="leaderboard-chip leaderboard-chip--you">You</span> : null}
+                      </div>
+                      <div className="leaderboard-player__meta">
+                        <span className="leaderboard-chip">Correct {row.correct_count}</span>
+                        {row.is_winner ? <span className="leaderboard-chip leaderboard-chip--winner">Winner</span> : null}
+                        <span className="leaderboard-chip leaderboard-chip--prize">Prize Rs {row.prize_amount}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="leaderboard-score">
-                <div className="leaderboard-score__value">{row.correct_count}</div>
-                <div className="leaderboard-score__label">correct</div>
+                <div className="leaderboard-score">
+                  <div className="leaderboard-score__value">{row.correct_count}</div>
+                  <div className="leaderboard-score__label">correct</div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </SiteShell>
   );

@@ -159,6 +159,8 @@ export default function LiveContestPage() {
         : [],
     [question]
   );
+  const totalQuestionMs = question ? question.time_limit_sec * 1000 : 0;
+  const timePercent = totalQuestionMs > 0 ? Math.max(0, Math.min(100, (timeRemaining / totalQuestionMs) * 100)) : 0;
 
   if (!isReady) {
     return (
@@ -185,17 +187,25 @@ export default function LiveContestPage() {
       subtitle="This page is connected to the actual Socket.io game server and follows worker-driven contest events."
     >
       <div className="grid two">
-        <div className="card">
+        <div className="card card-luxe live-shell-card">
           <div className="eyebrow">Contest</div>
           <div className="mono" style={{ marginTop: 14 }}>
             {contestId}
           </div>
           <p className="muted">{status}</p>
           {socketError ? <div className="notice error">{socketError}</div> : null}
-          <div className="pill-row">
-            <span className="pill gold">Time {Math.ceil(timeRemaining / 1000)}s</span>
+          <div className="live-timer">
+            <div className="live-timer__meta">
+              <span className="pill gold">Time {Math.ceil(timeRemaining / 1000)}s</span>
+              {question ? <span className="pill">Q{question.seq}</span> : null}
+            </div>
+            <div className="live-timer__track">
+              <div className="live-timer__fill" style={{ width: `${timePercent}%` }} />
+            </div>
+          </div>
+          <div className="pill-row" style={{ marginTop: 12 }}>
             {answerResult ? (
-              <span className={`pill ${answerResult.is_correct ? "" : "rose"}`}>
+              <span className={`pill ${answerResult.is_correct ? "pill--live" : "pill--cancelled"}`}>
                 Score {answerResult.your_score}
               </span>
             ) : null}
@@ -203,19 +213,19 @@ export default function LiveContestPage() {
           </div>
         </div>
 
-        <div className="card">
+        <div className="card card-luxe live-shell-card">
           <div className="eyebrow">Result State</div>
           <div className="list" style={{ marginTop: 14 }}>
-            <div className="notice">
+            <div className="notice notice-luxe">
               Selected option: <span className="mono">{selectedOption ?? "-"}</span>
             </div>
-            <div className="notice">
+            <div className="notice notice-luxe">
               Revealed option: <span className="mono">{reveal ?? "-"}</span>
             </div>
-            <div className="notice">
+            <div className="notice notice-luxe">
               Post-reveal countdown: <span className="mono">{revealCountdown}s</span>
             </div>
-            <div className="notice">
+            <div className="notice notice-luxe">
               Prize if won: <span className="mono">Rs {prizeAmount}</span>
             </div>
           </div>
@@ -224,9 +234,12 @@ export default function LiveContestPage() {
 
       {question ? (
         <div className="live-board" style={{ marginTop: 24 }}>
-          <div className="card">
-            <div className="eyebrow">Question {question.seq}</div>
-            <h2 className="section-title" style={{ marginTop: 14 }}>
+          <div className="card card-luxe live-question-card">
+            <div className="live-question-card__top">
+              <div className="eyebrow">Question {question.seq}</div>
+              <span className="pill">{question.time_limit_sec}s window</span>
+            </div>
+            <h2 className="section-title live-question-card__title" style={{ marginTop: 14 }}>
               {question.body}
             </h2>
 
@@ -235,6 +248,7 @@ export default function LiveContestPage() {
                 const isSelected = selectedOption === key;
                 const isCorrect = reveal === key;
                 const isWrongSelected = reveal !== null && isSelected && reveal !== key;
+                const optionState = isCorrect ? "Correct answer" : isWrongSelected ? "Your choice" : "Option";
 
                 return (
                   <button
@@ -257,8 +271,9 @@ export default function LiveContestPage() {
                     }}
                     disabled={timeRemaining <= 0 || reveal !== null}
                   >
-                    <strong>{key.toUpperCase()}</strong>
-                    <div style={{ marginTop: 10 }}>{value}</div>
+                    <span className="answer-button__key">{key.toUpperCase()}</span>
+                    <div className="answer-button__body">{value}</div>
+                    <span className="answer-button__state">{optionState}</span>
                   </button>
                 );
               })}
@@ -273,7 +288,7 @@ export default function LiveContestPage() {
       )}
 
       {leaderboard.length > 0 ? (
-        <div className="card" style={{ marginTop: 24 }}>
+        <div className="card card-luxe live-finished-card" style={{ marginTop: 24 }}>
           <div className="eyebrow">Contest Finished</div>
           <h2 className="section-title" style={{ marginTop: 14 }}>
             {youWon ? "You won this round." : "Round complete."}
@@ -281,8 +296,10 @@ export default function LiveContestPage() {
           <p className="muted">Prize credited: Rs {prizeAmount}</p>
           <div className="list">
             {leaderboard.map((entry, index) => (
-              <div key={entry.user_id} className="notice">
-                #{index + 1} {entry.name} | Correct {entry.correct_count} | Prize Rs {entry.prize_amount}
+              <div key={entry.user_id} className="notice notice-luxe live-finished-card__row">
+                <strong>#{index + 1} {entry.name}</strong>
+                <span>Correct {entry.correct_count}</span>
+                <span>Prize Rs {entry.prize_amount}</span>
               </div>
             ))}
           </div>
